@@ -21,14 +21,14 @@ export default function CartPage() {
             </div>
             <div>
               <span className="text-body-secondary">
-                ${(i.price * i.qty).toFixed(2)}
+                Rp{(i.price * i.qty).toFixed(2)}
               </span>
             </div>
           </li>
         ))}
         <li className="list-group-item d-flex justify-content-between">
-          <span>Total (USD)</span>
-          <strong>${total.toFixed(2)}</strong>
+          <span>Total (Rp)</span>
+          <strong>Rp{total.toFixed(2)}</strong>
         </li>
       </ul>
 

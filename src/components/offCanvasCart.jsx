@@ -43,19 +43,17 @@ export default function OffcanvasCart() {
               >
                 <div>
                   <h6 className="my-0">{i.name}</h6>
-                  <small className="text-body-secondary">
-                    {i.size || ""} • {i.qty} unit
-                  </small>
+                  <small className="text-body-secondary">{i.size || ""}</small>
                 </div>
                 <span className="text-body-secondary">
-                  ${(i.price * i.qty).toFixed(2)}
+                  Rp{(i.price * i.qty).toFixed(2)}
                 </span>
               </li>
             ))}
 
             <li className="list-group-item d-flex justify-content-between">
-              <span>Total (USD)</span>
-              <strong>${total.toFixed(2)}</strong>
+              <span>Total (Rp)</span>
+              <strong>Rp{total.toFixed(2)}</strong>
             </li>
           </ul>
 

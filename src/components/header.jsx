@@ -23,11 +23,6 @@ export default function Header() {
             <div className="col-sm-6 offset-sm-2 offset-md-0 col-lg-5 d-none d-lg-block"></div>
 
             <div className="col-sm-8 col-lg-4 d-flex justify-content-end gap-5 align-items-center mt-4 mt-sm-0 justify-content-center justify-content-sm-end">
-              <div className="support-box text-end d-none d-xl-block">
-                <span className="fs-6 text-muted">For Support?</span>
-                <h5 className="mb-0">+980-34984089</h5>
-              </div>
-
               <ul className="d-flex justify-content-end list-unstyled m-0">
                 <li>
                   <a
@@ -78,7 +73,6 @@ export default function Header() {
                   <span className="fs-6 text-muted dropdown-toggle">
                     Your Cart
                   </span>
-                  <span className="cart-total fs-5 fw-bold">$1290.00</span>
                 </button>
               </div>
             </div>

@@ -7,7 +7,10 @@ import { CartProvider } from "./contexts/index";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 
 // optional local overrides
-import "./style.css";
+import "./css/style.css";
+
+import jQuery from "jquery";
+window.$ = window.jQuery = jQuery;
 
 const root = createRoot(document.getElementById("root"));
 root.render(

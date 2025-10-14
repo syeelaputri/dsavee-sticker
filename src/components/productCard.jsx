@@ -1,57 +1,67 @@
-import React, { useState } from "react";
-import QuantityPicker from "./quantityPicker";
-import { useCartDispatch } from "../contexts/index";
+// src/components/ProductCard.jsx
+import React from "react";
 
 export default function ProductCard({ product }) {
-  const [qty, setQty] = useState(1);
-  const dispatch = useCartDispatch();
-
-  function addToCart() {
-    dispatch({
-      type: "ADD_ITEM",
-      payload: {
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        qty,
-        size: product.size,
-        image: product.image,
-      },
-    });
+  // defensif: jika product undefined, render placeholder
+  if (!product) {
+    return (
+      <div className="product-item">
+        <div className="placeholder">No product</div>
+      </div>
+    );
   }
 
+  // pastikan price adalah number
+  const rawPrice = product.price;
+  // jika Firebase menyimpan price sebagai "18" (string) -> parseFloat
+  const priceNum =
+    typeof rawPrice === "number" ? rawPrice : parseFloat(rawPrice);
+
+  // jika bukan number setelah parse -> fallback 0
+  const safePrice = Number.isFinite(priceNum) ? priceNum : 0;
+
   return (
-    <div className="product-item">
+    <div className="product-item card p-3">
       {product.badge && (
         <span className="badge bg-success position-absolute m-3">
           {product.badge}
         </span>
       )}
-      <a href="#" className="btn-wishlist">
-        <svg width="24" height="24">
-          <use xlinkHref="#heart"></use>
-        </svg>
-      </a>
-      <figure>
-        <a href="#" title={product.name}>
-          <img src={product.image} className="tab-image" alt={product.name} />
-        </a>
+      <figure className="text-center">
+        <img
+          src={product.image}
+          alt={product.name}
+          className="img-fluid"
+          style={{ maxHeight: 140 }}
+        />
       </figure>
-      <h3>{product.name}</h3>
-      <span className="qty">{product.qtyLabel || "1 Unit"}</span>
-      <span className="rating">
-        <svg width="24" height="24" className="text-primary">
-          <use xlinkHref="#star-solid"></use>
-        </svg>{" "}
-        {product.rating || "4.5"}
-      </span>
-      <span className="price">${product.price.toFixed(2)}</span>
+
+      <h3 className="h6 mt-2">{product.name || "Unnamed product"}</h3>
+      <div className="meta text-muted">
+        <small>{product.size || ""}</small>
+      </div>
+
+      <div className="price my-2">
+        <strong>Rp{safePrice.toFixed(2)}</strong>
+      </div>
 
       <div className="d-flex align-items-center justify-content-between">
-        <QuantityPicker qty={qty} onChange={setQty} />
-        <button className="nav-link btn btn-link" onClick={addToCart}>
-          Add to Cart <i className="uil uil-shopping-cart"></i>
-        </button>
+        <div className="product-qty d-flex align-items-center">
+          <button className="quantity-left-minus btn btn-sm btn-outline-secondary">
+            −
+          </button>
+          <input
+            className="quantity-input form-control form-control-sm mx-2 text-center"
+            value={product.qty || 1}
+            readOnly
+            style={{ width: 48 }}
+          />
+          <button className="quantity-right-plus btn btn-sm btn-outline-secondary">
+            ＋
+          </button>
+        </div>
+
+        <button className="btn btn-link">Add to Cart</button>
       </div>
     </div>
   );
