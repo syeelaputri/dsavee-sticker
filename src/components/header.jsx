@@ -1,0 +1,94 @@
+import React from "react";
+import OffcanvasCart from "./offCanvasCart";
+import OffcanvasSearch from "./offCanvasSearch";
+
+export default function Header() {
+  return (
+    <>
+      <header>
+        <div className="container-fluid">
+          <div className="row py-3 border-bottom">
+            <div className="col-sm-4 col-lg-3 text-center text-sm-start">
+              <div className="main-logo">
+                <a href="/">
+                  <img
+                    src="/images/logo.png"
+                    alt="logo"
+                    className="img-fluid"
+                  />
+                </a>
+              </div>
+            </div>
+
+            <div className="col-sm-6 offset-sm-2 offset-md-0 col-lg-5 d-none d-lg-block"></div>
+
+            <div className="col-sm-8 col-lg-4 d-flex justify-content-end gap-5 align-items-center mt-4 mt-sm-0 justify-content-center justify-content-sm-end">
+              <div className="support-box text-end d-none d-xl-block">
+                <span className="fs-6 text-muted">For Support?</span>
+                <h5 className="mb-0">+980-34984089</h5>
+              </div>
+
+              <ul className="d-flex justify-content-end list-unstyled m-0">
+                <li>
+                  <a
+                    href="/profile"
+                    className="rounded-circle bg-light p-2 mx-1"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                      <use xlinkHref="#user"></use>
+                    </svg>
+                  </a>
+                </li>
+                <li className="d-lg-none">
+                  <a
+                    href="#"
+                    className="rounded-circle bg-light p-2 mx-1"
+                    data-bs-toggle="offcanvas"
+                    data-bs-target="#offcanvasCart"
+                    aria-controls="offcanvasCart"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                      <use xlinkHref="#cart"></use>
+                    </svg>
+                  </a>
+                </li>
+                <li className="d-lg-none">
+                  <a
+                    href="#"
+                    className="rounded-circle bg-light p-2 mx-1"
+                    data-bs-toggle="offcanvas"
+                    data-bs-target="#offcanvasSearch"
+                    aria-controls="offcanvasSearch"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                      <use xlinkHref="#search"></use>
+                    </svg>
+                  </a>
+                </li>
+              </ul>
+
+              <div className="cart text-end d-none d-lg-block dropdown">
+                <button
+                  className="border-0 bg-transparent d-flex flex-column gap-2 lh-1"
+                  type="button"
+                  data-bs-toggle="offcanvas"
+                  data-bs-target="#offcanvasCart"
+                  aria-controls="offcanvasCart"
+                >
+                  <span className="fs-6 text-muted dropdown-toggle">
+                    Your Cart
+                  </span>
+                  <span className="cart-total fs-5 fw-bold">$1290.00</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Offcanvas components (keputusan: tetap di header agar markup tetap mirip) */}
+      <OffcanvasCart />
+      <OffcanvasSearch />
+    </>
+  );
+}

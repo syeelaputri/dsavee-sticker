@@ -1,25 +1,24 @@
-import logo from './logo.svg';
-import './App.css';
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Header from "./components/header";
+import Footer from "./components/footer";
+import Home from "./pages/home";
+import CartPage from "./pages/cartPage";
+import Checkout from "./pages/checkout";
+import Profile from "./pages/profile";
 
-function App() {
+export default function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Router>
+      <Header />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/cart" element={<CartPage />} />
+        <Route path="/checkout" element={<Checkout />} />
+        <Route path="/profile" element={<Profile />} />
+        {/* tambah route signup/login jika diperlukan */}
+      </Routes>
+      <Footer />
+    </Router>
   );
 }
-
-export default App;
