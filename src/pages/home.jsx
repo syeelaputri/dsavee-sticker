@@ -1,10 +1,10 @@
 import React from "react";
 import ProductGrid from "../components/productGrid";
+import Features from "../components/features";
 
 export default function Home() {
   return (
     <main>
-      {/* Banner blocks (struktur dan kelas diambil dari index.html) */}
       <section
         className="py-3"
         style={{
@@ -39,6 +39,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+      {/* Features */}
+      <Features />
     </main>
   );
 }

@@ -4,16 +4,7 @@ export default function Footer() {
   return (
     <>
       <footer className="py-5">
-        <div className="container-fluid">
-          <div className="row">
-            <div className="col-lg-3 col-md-6 col-sm-6">
-              <div className="footer-menu">
-                <img src="/images/logo.png" alt="logo" />
-              </div>
-            </div>
-            {/* Tambah kolom contact/info sesuai desain Anda */}
-          </div>
-        </div>
+        <div className="container-fluid"></div>
       </footer>
       <div id="footer-bottom">
         <div className="container-fluid">
