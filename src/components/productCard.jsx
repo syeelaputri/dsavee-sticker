@@ -39,6 +39,15 @@ export default function ProductCard({ product }) {
     typeof rawPrice === "number" ? rawPrice : parseFloat(rawPrice);
   const safePrice = Number.isFinite(priceNum) ? priceNum : 0;
 
+  // --- Badge: from Firebase (product.badge)
+  const badgeText = product?.badge; // langsung dari database
+  const badgeColorClass =
+    product?.badgeColorClass || (!product?.badgeColor ? "bg-success" : "");
+  const badgeInlineStyle = product?.badgeColor
+    ? { backgroundColor: product.badgeColor }
+    : undefined;
+  // --- end badge
+
   function getButtonPropsFromColor(color) {
     if (!color) return { className: "btn btn-primary btn-sm" };
     const bsVariants = [
@@ -62,7 +71,11 @@ export default function ProductCard({ product }) {
 
   function getContrastColor(bg) {
     try {
-      if (bg.startsWith("#") && (bg.length === 7 || bg.length === 4)) {
+      if (
+        typeof bg === "string" &&
+        bg.startsWith("#") &&
+        (bg.length === 7 || bg.length === 4)
+      ) {
         let r, g, b;
         if (bg.length === 7) {
           r = parseInt(bg.slice(1, 3), 16);
@@ -86,28 +99,37 @@ export default function ProductCard({ product }) {
 
   return (
     <div className="product-item card p-3 product-card position-relative">
-      {product.badge && (
+      {/* badge — tampil hanya jika product.badge ada */}
+      {badgeText && (
         <span
-          className={`badge position-absolute badge-custom`}
-          style={
-            product.badgeColor ? { backgroundColor: product.badgeColor } : {}
-          }
+          className={`badge ${badgeColorClass} position-absolute m-3`}
+          style={{ zIndex: 9999, ...(badgeInlineStyle || {}) }}
         >
-          {product.badge}
+          {badgeText}
         </span>
       )}
 
-      <figure className="text-center mb-0">
-        <img
-          src={product.image || "/images/placeholder.png"}
-          alt={product.name || "Produk"}
-          className="img-fluid"
-          style={{ maxHeight: 140 }}
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = "/images/placeholder.png";
-          }}
-        />
+      {/* optional wishlist */}
+      {product.showWishlist && (
+        <a href="#" className="btn-wishlist">
+          <svg width="24" height="24" aria-hidden>
+            <use xlinkHref="#heart"></use>
+          </svg>
+        </a>
+      )}
+
+      <figure>
+        <a href={product.url || "#"} title={product.name || "Product"}>
+          <img
+            src={product.image || "/images/placeholder.png"}
+            className="tab-image img-fluid"
+            alt={product.name || "Produk"}
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = "/images/placeholder.png";
+            }}
+          />
+        </a>
       </figure>
 
       <h3 className="h6 mt-2 mb-1">{product.name}</h3>
