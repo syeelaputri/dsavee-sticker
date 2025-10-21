@@ -373,22 +373,22 @@ h6 {
   }
 }
 
+/* --------------- BANNER: modified to make slide shorter --------------- */
 .banner-ad {
   position: relative;
   overflow: hidden;
   border-radius: 12px;
 }
-.banner-ad.blue {
-  background: #e6f3fb;
-}
+
+/* reduced pagination bottom so bullets aren't too low on tall slide */
 .banner-ad .swiper-pagination {
-  bottom: 40px;
+  bottom: 18px;
   left: 0;
   right: 0;
 }
 .banner-ad .swiper-pagination .swiper-pagination-bullet {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   margin: 4px;
   background: #fff;
   opacity: 1;
@@ -399,13 +399,18 @@ h6 {
   .swiper-pagination-bullet.swiper-pagination-bullet-active {
   background: #ffc43f;
 }
+
+/* reduce min-height of slides and make responsive with clamp */
 .banner-ad .swiper-slide {
-  min-height: 630px;
+  min-height: clamp(160px, 32vh, 360px); /* was 630px */
   display: flex;
+  align-items: center;
 }
+
+/* content typography & sizing (reduced) */
 .banner-ad .banner-content .categories {
   font-family: "Garamond";
-  font-size: 37px;
+  font-size: clamp(20px, 3.5vw, 37px); /* responsive, smaller on most screens */
   text-transform: capitalize;
   color: var(--dark-color);
 }
@@ -434,15 +439,41 @@ h6 {
 }
 .banner-ad .banner-content .banner-title {
   letter-spacing: 0.02em;
-  font-size: 33px;
+  font-size: clamp(20px, 4.5vw, 33px); /* reduced */
 }
 .banner-ad.large .banner-content .categories {
   color: var(--accent-color);
 }
+/* large slide title smaller than original but responsive */
 .banner-ad.large .banner-content .banner-title {
-  font-size: 54px;
+  font-size: clamp(28px, 6vw, 48px); /* was 54px */
 }
 
+/* override big paddings (p-5) used in HTML so we don't have to change JSX */
+.banner-content {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 1.25rem; /* smaller than p-5 */
+}
+.banner-content.p-5 {
+  padding: 1.15rem !important;
+}
+
+/* limit image size so it doesn't enlarge slide */
+.banner-ad .img-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.banner-ad .img-wrapper img {
+  width: auto;
+  max-width: 100%;
+  max-height: 640px; /* limit image height */
+  object-fit: contain;
+}
+
+/* navigation buttons (no change, kept for completeness) */
 .swiper-prev,
 .swiper-next {
   width: 38px;
@@ -487,7 +518,7 @@ h6 {
 }
 .category-carousel .category-item:hover {
   transform: translate3d(0, -10px, 0);
-  box-shadow: 0px 21px 44px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 21px 44px rgba(0, 0, 0, 0.08);
 }
 .category-carousel .category-item .category-title {
   font-weight: 600;
@@ -545,7 +576,7 @@ h6 {
   transition: box-shadow 0.3s ease-out;
 }
 .product-item:hover {
-  box-shadow: 0px 21px 44px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 21px 44px rgba(0, 0, 0, 0.08);
 }
 .product-item h3 {
   display: block;

@@ -1,20 +1,15 @@
 import React from "react";
 import ProductGrid from "../components/productGrid";
 import Features from "../components/features";
+import Banner from "../components/banner";
 
 export default function Home() {
   return (
     <main>
-      <section
-        className="py-3"
-        style={{
-          backgroundImage: "url('/images/background-pattern.jpg')",
-          backgroundRepeat: "no-repeat",
-          backgroundSize: "cover",
-        }}
-      ></section>
+      {/* Banner Section */}
+      <Banner />
 
-      {/* Products */}
+      {/* Products Section */}
       <section className="py-5">
         <div className="container-fluid">
           <div className="row">
@@ -39,7 +34,8 @@ export default function Home() {
           </div>
         </div>
       </section>
-      {/* Features */}
+
+      {/* Features Section */}
       <Features />
     </main>
   );
