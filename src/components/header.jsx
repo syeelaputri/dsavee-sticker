@@ -1,20 +1,9 @@
-import React, { useState, Suspense, lazy } from "react";
+// src/components/header.jsx
+import React from "react";
+import { Link } from "react-router-dom";
 import OffcanvasCart from "./offCanvasCart";
-import OffcanvasSearch from "./offCanvasSearch";
-
-// lazy load supaya bundle utama ringan; pastikan file src/AdminDashboard.jsx ada
-const AdminDashboard = lazy(() => import("../pages/dashboardAdmin"));
 
 export default function Header() {
-  const [showAdmin, setShowAdmin] = useState(false);
-
-  function toggleAdmin(e) {
-    e.preventDefault();
-    setShowAdmin((s) => !s);
-    // jika ingin scroll ke dashboard saat terbuka:
-    // setTimeout(() => document.getElementById('admin-dashboard')?.scrollIntoView({ behavior: 'smooth' }), 50);
-  }
-
   return (
     <>
       <header>
@@ -23,9 +12,13 @@ export default function Header() {
             {/* Logo */}
             <div className="col-sm-4 col-lg-3 text-center text-sm-start">
               <div className="main-logo">
-                <a href="/">
-                  <img src="/images/logo.png" alt="logo" className="img-fluid" />
-                </a>
+                <Link to="/">
+                  <img
+                    src="/images/logo.png"
+                    alt="logo"
+                    className="img-fluid"
+                  />
+                </Link>
               </div>
             </div>
 
@@ -37,11 +30,14 @@ export default function Header() {
               <ul className="d-flex justify-content-end list-unstyled m-0">
                 {/* Profile */}
                 <li>
-                  <a href="/profile" className="rounded-circle bg-light p-2 mx-1">
+                  <Link
+                    to="/profile"
+                    className="rounded-circle bg-light p-2 mx-1"
+                  >
                     <svg width="24" height="24" viewBox="0 0 24 24">
                       <use xlinkHref="#user"></use>
                     </svg>
-                  </a>
+                  </Link>
                 </li>
 
                 {/* Cart (mobile) */}
@@ -58,21 +54,6 @@ export default function Header() {
                     </svg>
                   </a>
                 </li>
-
-                {/* Search (mobile) */}
-                <li className="d-lg-none">
-                  <a
-                    href="#"
-                    className="rounded-circle bg-light p-2 mx-1"
-                    data-bs-toggle="offcanvas"
-                    data-bs-target="#offcanvasSearch"
-                    aria-controls="offcanvasSearch"
-                  >
-                    <svg width="24" height="24" viewBox="0 0 24 24">
-                      <use xlinkHref="#search"></use>
-                    </svg>
-                  </a>
-                </li>
               </ul>
 
               {/* Cart (desktop) */}
@@ -84,20 +65,13 @@ export default function Header() {
                   data-bs-target="#offcanvasCart"
                   aria-controls="offcanvasCart"
                 >
-                  <span className="fs-6 text-muted dropdown-toggle">Your Cart</span>
+                  <span className="fs-6 text-muted dropdown-toggle">
+                    Your Cart
+                  </span>
                 </button>
               </div>
 
-              {/* 🔹 Tombol Toggle Admin (sekarang bukan link ke halaman terpisah) */}
-              <div>
-                <button
-                  onClick={toggleAdmin}
-                  className="btn btn-primary px-3 py-2 fw-semibold"
-                  style={{ borderRadius: "8px" }}
-                >
-                  {showAdmin ? "Close Admin" : "Login Admin"}
-                </button>
-              </div>
+              {/* Tombol Login Admin menjadi Link ke /dashboardAdmin */}
             </div>
           </div>
         </div>
@@ -105,22 +79,6 @@ export default function Header() {
 
       {/* Offcanvas components */}
       <OffcanvasCart />
-      <OffcanvasSearch />
-
-      {/* Admin Dashboard area — akan muncul ketika showAdmin = true */}
-      {showAdmin && (
-        <section id="admin-dashboard" className="mt-4">
-          <div className="container-fluid">
-            <div className="row">
-              <div className="col-12">
-                <Suspense fallback={<div className="p-6 text-center">Loading admin dashboard...</div>}>
-                  <AdminDashboard />
-                </Suspense>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
     </>
   );
 }

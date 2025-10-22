@@ -95,6 +95,15 @@ export default function Checkout() {
     draftIdRef.current = draftId;
   }, []);
 
+  // Muat skrip Midtrans Snap secara dinamis
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://app.sandbox.midtrans.com/snap/snap.js";
+    script.setAttribute("data-client-key", "Mid-client-yncxXrxPbo1proU3");
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
   // Simple validation (dipakai sebelum submit)
   const validateForm = () => {
     if (!customerName.trim()) return "Masukkan nama penerima.";
@@ -313,26 +322,26 @@ export default function Checkout() {
     }
   };
 
-  // Handle submit: integrasi backend RTDB + storage upload + set orderData untuk PDF
+  // Handle submit: integrasi Midtrans Snap + RTDB + PDF
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
-
     const validationError = validateForm();
-    if (validationError) return setMessage(validationError);
-
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
     setSubmitting(true);
     setMessage("Menyimpan order...");
-
     const db = getDatabase();
-
     let orderId = null;
     try {
+      // Buat entry order baru di Firebase RTDB
       const ordersRef = dbRef(db, "orders");
       const newOrderRef = push(ordersRef);
       orderId = newOrderRef.key;
 
-      // Susun order object sesuai struktur RTDB
+      // Susun order object awal
       const orderObj = {
         orderId,
         customerName,
@@ -350,7 +359,7 @@ export default function Checkout() {
         payment: {
           method: paymentMethod,
           status: paymentMethod === "cod" ? "pending" : "pending_payment",
-          proofName: proofFile ? proofFile.name : proofNameDraft || null,
+          proofName: null,
           proofUrl: null,
           bank: paymentMethod === "bank" ? selectedBank : null,
           accountNumber:
@@ -375,39 +384,10 @@ export default function Checkout() {
         },
       };
 
-      // Simpan order awal
+      // Simpan order awal ke Firebase
       await set(newOrderRef, orderObj);
 
-      // Upload bukti (jika ada dan bukan COD)
-      let uploadedProofUrl = null;
-      if (proofFile && paymentMethod !== "cod") {
-        uploadedProofUrl = await uploadProofWithTimeout(
-          orderId,
-          proofFile,
-          15000
-        );
-        if (uploadedProofUrl) {
-          await update(dbRef(db, `orders/${orderId}`), {
-            "payment/proofUrl": uploadedProofUrl,
-            updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
-          });
-        } else {
-          console.warn("Proof upload gagal/timeout, lanjut tanpa proofUrl");
-        }
-      }
-
-      // Generate txId & update order
-      const txId = `${paymentMethod.toUpperCase()}-${Date.now()
-        .toString(36)
-        .concat(Math.random().toString(36).slice(2, 5))}`;
-
-      await update(dbRef(db, `orders/${orderId}`), {
-        "payment/txId": txId,
-        txId,
-        updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
-      });
-
-      // Hapus draft (jika ada)
+      // Hapus draft jika ada
       if (draftIdRef.current) {
         try {
           await set(dbRef(db, `orderDrafts/${draftIdRef.current}`), null);
@@ -417,63 +397,229 @@ export default function Checkout() {
         }
       }
 
-      // Kosongkan cart
-      dispatch({ type: "CLEAR_CART" });
+      // Jika metode pembayaran COD (Cash on Delivery)
+      if (paymentMethod === "cod") {
+        // Proses COD (tanpa Midtrans)
+        const txId = `COD-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 5)}`;
+        await update(dbRef(db, `orders/${orderId}`), {
+          "payment/txId": txId,
+          txId,
+          updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
+        });
 
-      // Persiapkan data untuk struk PDF (flatten)
-      const orderForPdf = {
-        txId,
-        customerName,
-        phone,
-        email,
-        address,
-        items: normalizedItems,
-        subtotal,
-        shippingCost,
-        total,
-        paymentMethod,
-        bank: paymentMethod === "bank" ? selectedBank : null,
-        accountNumber:
-          paymentMethod === "bank"
-            ? process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"
-            : null,
-        ewallet: paymentMethod === "ewallet" ? selectedEwallet : null,
-        ewalletNumber:
-          paymentMethod === "ewallet"
-            ? process.env.REACT_APP_EWALLET_NUMBER || "08123456789"
-            : null,
-        wallet: paymentMethod === "crypto" ? wallet : null,
-        blockchain: paymentMethod === "crypto" ? "Ethereum" : null,
-        token: paymentMethod === "crypto" ? "ETH" : null,
-        totalPaid: total,
+        // Kosongkan cart
+        dispatch({ type: "CLEAR_CART" });
+
+        // Siapkan data untuk struk PDF
+        const orderForPdf = {
+          txId,
+          customerName,
+          phone,
+          email,
+          address,
+          items: normalizedItems,
+          subtotal,
+          shippingCost,
+          total,
+          paymentMethod,
+          bank: paymentMethod === "bank" ? selectedBank : null,
+          accountNumber:
+            paymentMethod === "bank"
+              ? process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"
+              : null,
+          ewallet: paymentMethod === "ewallet" ? selectedEwallet : null,
+          ewalletNumber:
+            paymentMethod === "ewallet"
+              ? process.env.REACT_APP_EWALLET_NUMBER || "08123456789"
+              : null,
+          wallet: paymentMethod === "crypto" ? wallet : null,
+          blockchain: paymentMethod === "crypto" ? "Ethereum" : null,
+          token: paymentMethod === "crypto" ? "ETH" : null,
+          totalPaid: total,
+        };
+
+        setOrderData(orderForPdf);
+        setOrderCompleted(true);
+        setSubmitting(false);
+        setMessage(
+          `Order Berhasil Disimpan! Order ID: ${orderId}. ${getPaymentDeadline()}`
+        );
+        return;
+      }
+
+      // Non-COD: Gunakan Midtrans Snap
+      // Kumpulkan detail transaksi untuk Midtrans
+      const snapParams = {
+        transaction_details: {
+          order_id: orderId,
+          gross_amount: total,
+        },
+        item_details: normalizedItems.map((item) => ({
+          id: item.productId,
+          price: item.price,
+          quantity: item.qty,
+          name: item.name,
+        })),
+        customer_details: {
+          first_name: customerName,
+          email: email,
+          phone: phone,
+        },
       };
 
-      // Set UI success and store orderData untuk download
-      setOrderData(orderForPdf);
-      setOrderCompleted(true);
-      setSubmitting(false);
-      setMessage(
-        `Order Berhasil Disimpan! Order ID: ${orderId}. ${getPaymentDeadline()}`
+      setMessage("Menghubungkan ke Midtrans...");
+      // Panggil API Midtrans untuk token transaksi (gunakan Server Key di header)
+      const tokenResponse = await fetch(
+        "http://localhost:5000/api/create-midtrans",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(snapParams),
+        }
       );
 
-      // (optional) auto-confirm simulated for non-COD as in backend file
-      if (paymentMethod !== "cod") {
-        setTimeout(async () => {
+      const tokenData = await tokenResponse.json();
+      console.log("Midtrans proxy response:", tokenResponse.status, tokenData);
+
+      if (!tokenResponse.ok) {
+        // Tampilkan pesan lebih informatif, jangan biarkan Snap memunculkan pesan generic
+        throw new Error(
+          `Gagal membuat transaksi Midtrans. (${tokenResponse.status}) ${
+            tokenData && tokenData.error ? tokenData.error : ""
+          }`
+        );
+      }
+
+      if (!tokenData || !tokenData.token) {
+        throw new Error("Gagal mendapatkan token transaksi Midtrans");
+      }
+
+      // Panggil snap.js untuk menampilkan UI pembayaran Midtrans
+      window.snap.pay(tokenData.token, {
+        onSuccess: async (result) => {
+          console.log("Midtrans success:", result);
           try {
+            const midtransId = result.transaction_id;
             await update(dbRef(db, `orders/${orderId}`), {
               status: "confirmed",
               "payment/status": "confirmed",
-              confirmedAt: serverTimestamp ? serverTimestamp() : Date.now(),
+              "payment/txId": midtransId,
+              txId: midtransId,
               updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
             });
-            console.info("Order confirmed (simulated):", orderId);
           } catch (err) {
-            console.error("Gagal update konfirmasi (simulated):", err);
+            console.error("Update order after success failed:", err);
+            // jangan lempar error ke UI Midtrans — biarkan user lihat success di popup
           }
-        }, 10000);
-      }
+
+          dispatch({ type: "CLEAR_CART" });
+
+          const orderForPdf = {
+            txId: result.transaction_id,
+            customerName,
+            phone,
+            email,
+            address,
+            items: normalizedItems,
+            subtotal,
+            shippingCost,
+            total,
+            paymentMethod,
+            bank: paymentMethod === "bank" ? selectedBank : null,
+            accountNumber:
+              paymentMethod === "bank"
+                ? process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"
+                : null,
+            ewallet: paymentMethod === "ewallet" ? selectedEwallet : null,
+            ewalletNumber:
+              paymentMethod === "ewallet"
+                ? process.env.REACT_APP_EWALLET_NUMBER || "08123456789"
+                : null,
+            wallet: paymentMethod === "crypto" ? wallet : null,
+            blockchain: paymentMethod === "crypto" ? "Ethereum" : null,
+            token: paymentMethod === "crypto" ? "ETH" : null,
+            totalPaid: total,
+          };
+
+          setOrderData(orderForPdf);
+          setOrderCompleted(true);
+          setSubmitting(false);
+          setMessage("Pembayaran berhasil!");
+
+          // PENTING: kembalikan false supaya Snap TIDAK melakukan redirect otomatis
+          return false;
+        },
+        onPending: async (result) => {
+          console.log("Midtrans pending:", result);
+          try {
+            const midtransId = result.transaction_id;
+            await update(dbRef(db, `orders/${orderId}`), {
+              status: "pending",
+              "payment/status": "pending",
+              "payment/txId": midtransId,
+              txId: midtransId,
+              updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
+            });
+          } catch (err) {
+            console.error("Update order after pending failed:", err);
+          }
+
+          dispatch({ type: "CLEAR_CART" });
+
+          const orderForPdf = {
+            txId: result.transaction_id,
+            customerName,
+            phone,
+            email,
+            address,
+            items: normalizedItems,
+            subtotal,
+            shippingCost,
+            total,
+            paymentMethod,
+            bank: paymentMethod === "bank" ? selectedBank : null,
+            accountNumber:
+              paymentMethod === "bank"
+                ? process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"
+                : null,
+            ewallet: paymentMethod === "ewallet" ? selectedEwallet : null,
+            ewalletNumber:
+              paymentMethod === "ewallet"
+                ? process.env.REACT_APP_EWALLET_NUMBER || "08123456789"
+                : null,
+            wallet: paymentMethod === "crypto" ? wallet : null,
+            blockchain: paymentMethod === "crypto" ? "Ethereum" : null,
+            token: paymentMethod === "crypto" ? "ETH" : null,
+            totalPaid: total,
+          };
+
+          setOrderData(orderForPdf);
+          setOrderCompleted(true);
+          setSubmitting(false);
+          setMessage(`Order Berhasil Disimpan! ${getPaymentDeadline()}`);
+
+          // Cegah redirect default Snap
+          return false;
+        },
+        onError: (result) => {
+          console.error("Midtrans error (snap):", result);
+          setSubmitting(false);
+          // Berikan pesan yang lebih spesifik bila tersedia
+          const msg =
+            (result && (result.status_message || result.message)) ||
+            "Terjadi kesalahan pembayaran. Silakan coba lagi.";
+          setMessage("Pembayaran gagal: " + msg);
+        },
+        onClose: () => {
+          setSubmitting(false);
+          setMessage("Pembayaran dibatalkan.");
+        },
+      });
     } catch (err) {
-      console.error("Checkout error:", err);
+      console.error("Checkout error detail:", err);
+      alert("Terjadi error: " + err.message);
       setSubmitting(false);
       setMessage("Gagal menyimpan order. Silakan coba lagi.");
     }
@@ -729,7 +875,7 @@ export default function Checkout() {
 
             <button
               className="btn"
-              onClick={() => (window.location.href = "/")}
+              onClick={() => (window.location.href = "./home")}
               style={{
                 backgroundColor: colors.secondary,
                 color: colors.primary,
@@ -1052,19 +1198,13 @@ export default function Checkout() {
               <div>Rp{subtotal.toLocaleString("id-ID")}</div>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <div>Ongkir</div>
+              <div>Biaya Kirim</div>
               <div>Rp{shippingCost.toLocaleString("id-ID")}</div>
             </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: 8,
-                fontWeight: 700,
-              }}
-            >
-              <div>Total</div>
-              <div>Rp{total.toLocaleString("id-ID")}</div>
+            <hr />
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <strong>Total</strong>
+              <strong>Rp{total.toLocaleString("id-ID")}</strong>
             </div>
           </div>
         </div>
