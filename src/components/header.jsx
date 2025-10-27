@@ -1,4 +1,5 @@
 import React, { useState, Suspense, lazy } from "react";
+import { Link } from "react-router-dom";
 import OffcanvasCart from "./offCanvasCart";
 import OffcanvasSearch from "./offCanvasSearch";
 
@@ -24,7 +25,11 @@ export default function Header() {
             <div className="col-sm-4 col-lg-3 text-center text-sm-start">
               <div className="main-logo">
                 <a href="/">
-                  <img src="/images/logo.png" alt="logo" className="img-fluid" />
+                  <img
+                    src="/images/logo.png"
+                    alt="logo"
+                    className="img-fluid"
+                  />
                 </a>
               </div>
             </div>
@@ -37,7 +42,10 @@ export default function Header() {
               <ul className="d-flex justify-content-end list-unstyled m-0">
                 {/* Profile */}
                 <li>
-                  <a href="/profile" className="rounded-circle bg-light p-2 mx-1">
+                  <a
+                    href="/profile"
+                    className="rounded-circle bg-light p-2 mx-1"
+                  >
                     <svg width="24" height="24" viewBox="0 0 24 24">
                       <use xlinkHref="#user"></use>
                     </svg>
@@ -84,19 +92,28 @@ export default function Header() {
                   data-bs-target="#offcanvasCart"
                   aria-controls="offcanvasCart"
                 >
-                  <span className="fs-6 text-muted dropdown-toggle">Your Cart</span>
+                  <span className="fs-6 text-muted dropdown-toggle">
+                    Your Cart
+                  </span>
                 </button>
               </div>
 
-              {/* 🔹 Tombol Toggle Admin (sekarang bukan link ke halaman terpisah) */}
-              <div>
-                <button
-                  onClick={toggleAdmin}
+              {/* 🔹 Tombol Login dan Signup */}
+              <div className="d-flex gap-2">
+                <Link
+                  to="/login"
+                  className="btn btn-outline-primary px-3 py-2 fw-semibold"
+                  style={{ borderRadius: "8px" }}
+                >
+                  Login
+                </Link>
+                <Link
+                  to="/signup"
                   className="btn btn-primary px-3 py-2 fw-semibold"
                   style={{ borderRadius: "8px" }}
                 >
-                  {showAdmin ? "Close Admin" : "Login Admin"}
-                </button>
+                  Sign Up
+                </Link>
               </div>
             </div>
           </div>
@@ -113,7 +130,13 @@ export default function Header() {
           <div className="container-fluid">
             <div className="row">
               <div className="col-12">
-                <Suspense fallback={<div className="p-6 text-center">Loading admin dashboard...</div>}>
+                <Suspense
+                  fallback={
+                    <div className="p-6 text-center">
+                      Loading admin dashboard...
+                    </div>
+                  }
+                >
                   <AdminDashboard />
                 </Suspense>
               </div>
