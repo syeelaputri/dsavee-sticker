@@ -14,8 +14,8 @@ import Login from "./pages/login";
 import SignUp from "./pages/signup";
 import AdminLogin from "./pages/AdminLogin";
 import Logout from "./pages/logout";
-import Products from "./pages/products";
 import OrderHistory from "./pages/orderHistory";
+import ProductDetail from "./pages/productDetail";
 
 const AdminDashboard = lazy(() => import("./pages/dashboardAdmin"));
 
@@ -30,6 +30,7 @@ export default function App() {
           >
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route path="/product/:productId" element={<ProductDetail />} />
               <Route path="/cart" element={<CartPage />} />
               <Route path="/checkout" element={<Checkout />} />
               <Route path="/profile" element={<Profile />} />
@@ -39,7 +40,6 @@ export default function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/admin-login" element={<AdminLogin />} />
               <Route path="/logout" element={<Logout />} />
-              <Route path="/products" element={<Products />} />
               <Route path="/orders" element={<OrderHistory />} />
             </Routes>
           </Suspense>

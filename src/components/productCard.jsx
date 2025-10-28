@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import QuantityPicker from "./quantityPicker";
 import { useCartDispatch } from "../contexts/index";
+import { useNavigate } from "react-router-dom";
 
 export default function ProductCard({ product }) {
   const [qty, setQty] = useState(1);
@@ -10,6 +11,7 @@ export default function ProductCard({ product }) {
       null
   );
   const dispatch = useCartDispatch();
+  const navigate = useNavigate();
 
   if (!product) {
     return (
@@ -17,6 +19,11 @@ export default function ProductCard({ product }) {
         <div className="placeholder">No product</div>
       </div>
     );
+  }
+  function goToProductDetail() {
+    if (product?.id) {
+      navigate(`/product/${product.id}`);
+    }
   }
 
   function addToCart() {
@@ -119,7 +126,11 @@ export default function ProductCard({ product }) {
       )}
 
       <figure>
-        <a href={product.url || "#"} title={product.name || "Product"}>
+        <div
+          onClick={goToProductDetail}
+          title={product.name || "Product"}
+          style={{ cursor: "pointer" }}
+        >
           <img
             src={product.image || "/images/placeholder.png"}
             className="tab-image img-fluid"
@@ -129,10 +140,17 @@ export default function ProductCard({ product }) {
               e.currentTarget.src = "/images/placeholder.png";
             }}
           />
-        </a>
+        </div>
       </figure>
 
-      <h3 className="h6 mt-2 mb-1">{product.name}</h3>
+      <h3
+        className="h6 mt-2 mb-1"
+        onClick={goToProductDetail}
+        style={{ cursor: "pointer" }}
+      >
+        {product.name}
+      </h3>
+
       <div className="meta text-muted mb-2">
         <small>{product.size || ""}</small>
       </div>
