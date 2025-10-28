@@ -1,34 +1,51 @@
-// src/App.js
 import React, { lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { CartProvider } from "./contexts/CartContext";
+import { AuthProvider } from "./contexts/AuthContext";
+
 import Header from "./components/header";
 import Footer from "./components/footer";
 import Home from "./pages/home";
 import CartPage from "./pages/cartPage";
 import Checkout from "./pages/checkout";
 import Profile from "./pages/profile";
+import AboutUs from "./pages/aboutUs";
+import Login from "./pages/login";
+import SignUp from "./pages/signup";
+import AdminLogin from "./pages/AdminLogin";
+import Logout from "./pages/logout";
+import Products from "./pages/products";
+import OrderHistory from "./pages/orderHistory";
 
-// lazy load admin dashboard
 const AdminDashboard = lazy(() => import("./pages/dashboardAdmin"));
 
 export default function App() {
   return (
-    <Router>
-      <Header />
-      <Suspense fallback={<div className="p-6 text-center">Loading...</div>}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/cart" element={<CartPage />} />
-          <Route path="/checkout" element={<Checkout />} />
-          <Route path="/profile" element={<Profile />} />
-
-          {/* Route untuk dashboard admin — hanya bisa diakses lewat URL /dashboardAdmin */}
-          <Route path="/dashboardAdmin" element={<AdminDashboard />} />
-
-          {/* tambah route signup/login jika diperlukan */}
-        </Routes>
-      </Suspense>
-      <Footer />
-    </Router>
+    <AuthProvider>
+      <CartProvider>
+        <Router>
+          <Header />
+          <Suspense
+            fallback={<div className="p-6 text-center">Loading...</div>}
+          >
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/cart" element={<CartPage />} />
+              <Route path="/checkout" element={<Checkout />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/dashboardAdmin" element={<AdminDashboard />} />
+              <Route path="/aboutUs" element={<AboutUs />} />
+              <Route path="/signup" element={<SignUp />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/admin-login" element={<AdminLogin />} />
+              <Route path="/logout" element={<Logout />} />
+              <Route path="/products" element={<Products />} />
+              <Route path="/orders" element={<OrderHistory />} />
+            </Routes>
+          </Suspense>
+          <Footer />
+        </Router>
+      </CartProvider>
+    </AuthProvider>
   );
 }

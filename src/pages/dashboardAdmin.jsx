@@ -1,12 +1,5 @@
 /* eslint-disable no-restricted-globals */
 
-// src/AdminDashboard.jsx
-// Admin Dashboard component for Dsavee
-// - Default export
-// - Uses localStorage for mock persistence (replace with API later)
-// - Features: CRUD produk, metrics, orders table (order_id, payment_method, buyer_wallet, total_amount, currency, tx_hash, status, created_at, updated_at),
-//   paging, sort by date, search by order_id, mock order creation, edit tx hash, change order status.
-
 import React, { useEffect, useMemo, useState } from "react";
 
 export default function AdminDashboard() {
@@ -73,7 +66,13 @@ export default function AdminDashboard() {
   // Product CRUD state
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
-  const [productForm, setProductForm] = useState({ id: "", name: "", price: "", stock: "", currency: "IDR" });
+  const [productForm, setProductForm] = useState({
+    id: "",
+    name: "",
+    price: "",
+    stock: "",
+    currency: "IDR",
+  });
 
   // Orders UI state
   const [page, setPage] = useState(1);
@@ -92,8 +91,12 @@ export default function AdminDashboard() {
   // metrics
   const metrics = useMemo(() => {
     const totalOrders = orders.length;
-    const totalRevenue = orders.filter((o) => o.status === "Completed").reduce((acc, o) => acc + Number(o.total_amount || 0), 0);
-    const jumlahPelanggan = new Set(orders.map((o) => o.buyer_wallet).filter(Boolean)).size;
+    const totalRevenue = orders
+      .filter((o) => o.status === "Completed")
+      .reduce((acc, o) => acc + Number(o.total_amount || 0), 0);
+    const jumlahPelanggan = new Set(
+      orders.map((o) => o.buyer_wallet).filter(Boolean)
+    ).size;
     const jumlahProduk = products.length;
     return { totalOrders, totalRevenue, jumlahPelanggan, jumlahProduk };
   }, [orders, products]);
@@ -101,7 +104,13 @@ export default function AdminDashboard() {
   // product handlers
   function openAddProduct() {
     setEditingProductId(null);
-    setProductForm({ id: `p${Date.now()}`, name: "", price: "", stock: "", currency: "IDR" });
+    setProductForm({
+      id: `p${Date.now()}`,
+      name: "",
+      price: "",
+      stock: "",
+      currency: "IDR",
+    });
     setProductModalOpen(true);
   }
   function openEditProduct(p) {
@@ -111,9 +120,15 @@ export default function AdminDashboard() {
   }
   function saveProduct(e) {
     e.preventDefault();
-    const form = { ...productForm, price: Number(productForm.price), stock: Number(productForm.stock) };
+    const form = {
+      ...productForm,
+      price: Number(productForm.price),
+      stock: Number(productForm.stock),
+    };
     if (editingProductId) {
-      setProducts((prev) => prev.map((x) => (x.id === editingProductId ? form : x)));
+      setProducts((prev) =>
+        prev.map((x) => (x.id === editingProductId ? form : x))
+      );
     } else {
       setProducts((prev) => [form, ...prev]);
     }
@@ -126,12 +141,20 @@ export default function AdminDashboard() {
 
   // orders helpers
   function updateOrderStatus(order_id, newStatus) {
-    setOrders((prev) => prev.map((o) => (o.order_id === order_id ? { ...o, status: newStatus, updated_at: new Date().toISOString() } : o)));
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.order_id === order_id
+          ? { ...o, status: newStatus, updated_at: new Date().toISOString() }
+          : o
+      )
+    );
   }
 
   function isValidTxHash(hash) {
     if (!hash) return false;
-    return typeof hash === "string" && hash.startsWith("0x") && hash.length > 10;
+    return (
+      typeof hash === "string" && hash.startsWith("0x") && hash.length > 10
+    );
   }
 
   // search, sort, paginate
@@ -149,11 +172,17 @@ export default function AdminDashboard() {
     return list;
   }, [orders, searchOrderId, sortDesc]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredSortedOrders.length / pageSize));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredSortedOrders.length / pageSize)
+  );
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [totalPages]);
-  const pagedOrders = filteredSortedOrders.slice((page - 1) * pageSize, page * pageSize);
+  const pagedOrders = filteredSortedOrders.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
 
   // mock order (for testing)
   function addMockOrder() {
@@ -161,7 +190,10 @@ export default function AdminDashboard() {
     const newOrder = {
       order_id: id,
       payment_method: Math.random() > 0.4 ? "Crypto" : "Bank Transfer",
-      buyer_wallet: Math.random() > 0.4 ? `0x${Math.random().toString(16).slice(2, 12)}` : "",
+      buyer_wallet:
+        Math.random() > 0.4
+          ? `0x${Math.random().toString(16).slice(2, 12)}`
+          : "",
       total_amount: Math.random() > 0.5 ? 25000 : 0.02,
       currency: Math.random() > 0.5 ? "IDR" : "ETH",
       tx_hash: "",
@@ -174,7 +206,13 @@ export default function AdminDashboard() {
 
   // Edit tx hash save
   function saveTxHash(order_id, hash) {
-    setOrders((prev) => prev.map((o) => (o.order_id === order_id ? { ...o, tx_hash: hash, updated_at: new Date().toISOString() } : o)));
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.order_id === order_id
+          ? { ...o, tx_hash: hash, updated_at: new Date().toISOString() }
+          : o
+      )
+    );
   }
 
   // ----- UI -----
@@ -184,41 +222,82 @@ export default function AdminDashboard() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-2xl font-semibold">Dashboard Admin</h2>
-            <div className="text-sm text-gray-500">Overview — produk & pesanan</div>
+            <div className="text-sm text-gray-500">
+              Overview — produk & pesanan
+            </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={openAddProduct} className="px-3 py-2 bg-indigo-600 text-white rounded">+ Add Product</button>
-            <button onClick={addMockOrder} className="px-3 py-2 bg-emerald-600 text-white rounded">+ Mock Order</button>
+            <button
+              onClick={openAddProduct}
+              className="px-3 py-2 bg-indigo-600 text-white rounded"
+            >
+              + Add Product
+            </button>
+            <button
+              onClick={addMockOrder}
+              className="px-3 py-2 bg-emerald-600 text-white rounded"
+            >
+              + Mock Order
+            </button>
           </div>
         </div>
 
         {/* metrics */}
         <section className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
-          <Card title="Total Pesanan"><div className="text-2xl font-bold">{metrics.totalOrders}</div></Card>
+          <Card title="Total Pesanan">
+            <div className="text-2xl font-bold">{metrics.totalOrders}</div>
+          </Card>
           <Card title="Total Pendapatan">
-            <div className="text-2xl font-bold">{metrics.totalRevenue.toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {metrics.totalRevenue.toLocaleString()}
+            </div>
             <div className="text-sm text-gray-500">(sum for Completed)</div>
           </Card>
-          <Card title="Jumlah Pelanggan"><div className="text-2xl font-bold">{metrics.jumlahPelanggan}</div></Card>
-          <Card title="Jumlah Produk"><div className="text-2xl font-bold">{metrics.jumlahProduk}</div></Card>
+          <Card title="Jumlah Pelanggan">
+            <div className="text-2xl font-bold">{metrics.jumlahPelanggan}</div>
+          </Card>
+          <Card title="Jumlah Produk">
+            <div className="text-2xl font-bold">{metrics.jumlahProduk}</div>
+          </Card>
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* products */}
           <div className="lg:col-span-1 bg-white p-4 rounded shadow">
-            <div className="flex items-center justify-between mb-3"><h3 className="font-semibold">Products</h3></div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Products</h3>
+            </div>
             <div className="space-y-3">
-              {products.length === 0 && <div className="text-sm text-gray-500">No products yet</div>}
+              {products.length === 0 && (
+                <div className="text-sm text-gray-500">No products yet</div>
+              )}
               {products.map((p) => (
-                <div key={p.id} className="flex items-center justify-between border rounded p-2">
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between border rounded p-2"
+                >
                   <div>
                     <div className="font-medium">{p.name}</div>
-                    <div className="text-sm text-gray-500">{p.currency} {String(p.price)}</div>
-                    <div className="text-sm text-gray-500">Stock: {p.stock}</div>
+                    <div className="text-sm text-gray-500">
+                      {p.currency} {String(p.price)}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Stock: {p.stock}
+                    </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => openEditProduct(p)} className="px-2 py-1 border rounded text-sm">Edit</button>
-                    <button onClick={() => deleteProduct(p.id)} className="px-2 py-1 border rounded text-sm text-red-600">Delete</button>
+                    <button
+                      onClick={() => openEditProduct(p)}
+                      className="px-2 py-1 border rounded text-sm"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteProduct(p.id)}
+                      className="px-2 py-1 border rounded text-sm text-red-600"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               ))}
@@ -236,7 +315,10 @@ export default function AdminDashboard() {
                   onChange={(e) => setSearchOrderId(e.target.value)}
                   className="border rounded px-2 py-1 text-sm"
                 />
-                <button onClick={() => setSortDesc((s) => !s)} className="px-2 py-1 border rounded text-sm">
+                <button
+                  onClick={() => setSortDesc((s) => !s)}
+                  className="px-2 py-1 border rounded text-sm"
+                >
                   Sort: {sortDesc ? "Newest" : "Oldest"}
                 </button>
               </div>
@@ -268,22 +350,46 @@ export default function AdminDashboard() {
                       <td className="p-2">{o.currency}</td>
                       <td className="p-2">
                         {o.tx_hash || "-"}
-                        {!isValidTxHash(o.tx_hash) && o.payment_method === "Crypto" && (
-                          <div className="text-xs text-red-600">Invalid/empty hash</div>
-                        )}
+                        {!isValidTxHash(o.tx_hash) &&
+                          o.payment_method === "Crypto" && (
+                            <div className="text-xs text-red-600">
+                              Invalid/empty hash
+                            </div>
+                          )}
                       </td>
                       <td className="p-2">{o.status}</td>
-                      <td className="p-2">{new Date(o.created_at).toLocaleString()}</td>
-                      <td className="p-2">{new Date(o.updated_at).toLocaleString()}</td>
+                      <td className="p-2">
+                        {new Date(o.created_at).toLocaleString()}
+                      </td>
+                      <td className="p-2">
+                        {new Date(o.updated_at).toLocaleString()}
+                      </td>
                       <td className="p-2">
                         <div className="flex gap-1">
                           {o.status !== "Completed" && (
-                            <button onClick={() => updateOrderStatus(o.order_id, "Completed")} className="px-2 py-1 border rounded text-xs">Mark Complete</button>
+                            <button
+                              onClick={() =>
+                                updateOrderStatus(o.order_id, "Completed")
+                              }
+                              className="px-2 py-1 border rounded text-xs"
+                            >
+                              Mark Complete
+                            </button>
                           )}
                           {o.status !== "Cancelled" && (
-                            <button onClick={() => updateOrderStatus(o.order_id, "Cancelled")} className="px-2 py-1 border rounded text-xs text-red-600">Cancel</button>
+                            <button
+                              onClick={() =>
+                                updateOrderStatus(o.order_id, "Cancelled")
+                              }
+                              className="px-2 py-1 border rounded text-xs text-red-600"
+                            >
+                              Cancel
+                            </button>
                           )}
-                          <EditTxButton order={o} onSave={(hash) => saveTxHash(o.order_id, hash)} />
+                          <EditTxButton
+                            order={o}
+                            onSave={(hash) => saveTxHash(o.order_id, hash)}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -294,11 +400,25 @@ export default function AdminDashboard() {
 
             {/* pagination */}
             <div className="flex items-center justify-between mt-3">
-              <div className="text-sm text-gray-600">Showing {filteredSortedOrders.length} orders</div>
+              <div className="text-sm text-gray-600">
+                Showing {filteredSortedOrders.length} orders
+              </div>
               <div className="flex gap-2 items-center">
-                <button onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-2 py-1 border rounded">Prev</button>
-                <div className="px-2 py-1 border rounded">{page} / {totalPages}</div>
-                <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="px-2 py-1 border rounded">Next</button>
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="px-2 py-1 border rounded"
+                >
+                  Prev
+                </button>
+                <div className="px-2 py-1 border rounded">
+                  {page} / {totalPages}
+                </div>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="px-2 py-1 border rounded"
+                >
+                  Next
+                </button>
               </div>
             </div>
           </div>
@@ -308,32 +428,77 @@ export default function AdminDashboard() {
         {isProductModalOpen && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white p-4 rounded w-full max-w-md">
-              <h3 className="font-semibold mb-2">{editingProductId ? "Edit Product" : "Add Product"}</h3>
+              <h3 className="font-semibold mb-2">
+                {editingProductId ? "Edit Product" : "Add Product"}
+              </h3>
               <form onSubmit={saveProduct} className="space-y-2">
                 <div>
                   <label className="text-sm block">Name</label>
-                  <input required value={productForm.name} onChange={(e) => setProductForm((s) => ({ ...s, name: e.target.value }))} className="w-full border rounded px-2 py-1" />
+                  <input
+                    required
+                    value={productForm.name}
+                    onChange={(e) =>
+                      setProductForm((s) => ({ ...s, name: e.target.value }))
+                    }
+                    className="w-full border rounded px-2 py-1"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-sm block">Price</label>
-                    <input required type="number" value={productForm.price} onChange={(e) => setProductForm((s) => ({ ...s, price: e.target.value }))} className="w-full border rounded px-2 py-1" />
+                    <input
+                      required
+                      type="number"
+                      value={productForm.price}
+                      onChange={(e) =>
+                        setProductForm((s) => ({ ...s, price: e.target.value }))
+                      }
+                      className="w-full border rounded px-2 py-1"
+                    />
                   </div>
                   <div>
                     <label className="text-sm block">Stock</label>
-                    <input required type="number" value={productForm.stock} onChange={(e) => setProductForm((s) => ({ ...s, stock: e.target.value }))} className="w-full border rounded px-2 py-1" />
+                    <input
+                      required
+                      type="number"
+                      value={productForm.stock}
+                      onChange={(e) =>
+                        setProductForm((s) => ({ ...s, stock: e.target.value }))
+                      }
+                      className="w-full border rounded px-2 py-1"
+                    />
                   </div>
                 </div>
                 <div>
                   <label className="text-sm block">Currency</label>
-                  <select value={productForm.currency} onChange={(e) => setProductForm((s) => ({ ...s, currency: e.target.value }))} className="w-full border rounded px-2 py-1">
+                  <select
+                    value={productForm.currency}
+                    onChange={(e) =>
+                      setProductForm((s) => ({
+                        ...s,
+                        currency: e.target.value,
+                      }))
+                    }
+                    className="w-full border rounded px-2 py-1"
+                  >
                     <option>IDR</option>
                     <option>ETH</option>
                   </select>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setProductModalOpen(false)} className="px-3 py-1 border rounded">Cancel</button>
-                  <button type="submit" className="px-3 py-1 bg-indigo-600 text-white rounded">Save</button>
+                  <button
+                    type="button"
+                    onClick={() => setProductModalOpen(false)}
+                    className="px-3 py-1 border rounded"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-3 py-1 bg-indigo-600 text-white rounded"
+                  >
+                    Save
+                  </button>
                 </div>
               </form>
             </div>
@@ -362,16 +527,41 @@ function EditTxButton({ order, onSave }) {
 
   return (
     <div className="relative">
-      <button className="px-2 py-1 border rounded text-xs" onClick={() => setOpen((s) => !s)}>Edit Tx</button>
+      <button
+        className="px-2 py-1 border rounded text-xs"
+        onClick={() => setOpen((s) => !s)}
+      >
+        Edit Tx
+      </button>
       {open && (
         <div className="absolute right-0 mt-2 bg-white border rounded p-2 text-sm w-72 z-50">
           <div>
             <label className="text-xs">Tx Hash</label>
-            <input value={hash} onChange={(e) => setHash(e.target.value)} className="w-full border rounded px-2 py-1 text-xs" />
+            <input
+              value={hash}
+              onChange={(e) => setHash(e.target.value)}
+              className="w-full border rounded px-2 py-1 text-xs"
+            />
           </div>
           <div className="flex justify-end gap-2 mt-2">
-            <button onClick={() => { setOpen(false); setHash(order.tx_hash || ""); }} className="px-2 py-1 border rounded text-xs">Cancel</button>
-            <button onClick={() => { onSave(hash); setOpen(false); }} className="px-2 py-1 bg-indigo-600 text-white rounded text-xs">Save</button>
+            <button
+              onClick={() => {
+                setOpen(false);
+                setHash(order.tx_hash || "");
+              }}
+              className="px-2 py-1 border rounded text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                onSave(hash);
+                setOpen(false);
+              }}
+              className="px-2 py-1 bg-indigo-600 text-white rounded text-xs"
+            >
+              Save
+            </button>
           </div>
         </div>
       )}

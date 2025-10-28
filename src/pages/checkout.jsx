@@ -8,18 +8,8 @@ import {
   push,
   set,
   update,
-  get,
-  child,
   serverTimestamp,
 } from "firebase/database";
-
-// Storage (upload bukti)
-import {
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
 
 // PDF
 import { jsPDF } from "jspdf";
@@ -45,14 +35,8 @@ export default function Checkout() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
 
-  // payment states
+  // payment states — hanya 'cod' dan 'midtrans'
   const [paymentMethod, setPaymentMethod] = useState("cod");
-  const [wallet, setWallet] = useState("");
-  const [selectedBank, setSelectedBank] = useState("BCA");
-  const [selectedEwallet, setSelectedEwallet] = useState("GoPay");
-
-  const [proofFile, setProofFile] = useState(null);
-  const [proofNameDraft, setProofNameDraft] = useState(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
@@ -111,60 +95,20 @@ export default function Checkout() {
     if (!phone.trim()) return "Masukkan nomor HP.";
     if (!email.trim()) return "Masukkan email.";
     if (normalizedItems.length === 0) return "Keranjang kosong.";
-    if (paymentMethod === "crypto") {
-      if (!wallet.trim()) return "Masukkan wallet address.";
-      if (!/^0x[a-fA-F0-9]{40}$/.test(wallet))
-        return "Wallet address tidak valid (harus mulai 0x dan 40 karakter).";
-    }
     return null;
   };
 
   const getPaymentDeadline = () => {
     switch (paymentMethod) {
-      case "crypto":
-        return "Batas waktu pembayaran: 2 jam";
-      case "bank":
-        return "Batas waktu pembayaran: 24 jam";
-      case "ewallet":
-        return "Batas waktu pembayaran: 2 jam";
+      case "midtrans":
+        return "Pembayaran diproses melalui Midtrans (lihat instruksi di popup Midtrans).";
       case "cod":
-        return "Bayar ketika barang diterima";
       default:
-        return "";
+        return "Bayar ketika barang diterima";
     }
   };
 
-  // Helper: upload proof with timeout (dari backend file)
-  const uploadProofWithTimeout = async (orderId, file, timeoutMs = 15000) => {
-    if (!file) return null;
-    try {
-      const storage = getStorage();
-      const sRef = storageRef(storage, `orderProofs/${orderId}/${file.name}`);
-
-      const uploadPromise = uploadBytes(sRef, file);
-      await Promise.race([
-        uploadPromise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("upload-timeout")), timeoutMs)
-        ),
-      ]);
-
-      const urlPromise = getDownloadURL(sRef);
-      const url = await Promise.race([
-        urlPromise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("geturl-timeout")), timeoutMs)
-        ),
-      ]);
-
-      return url;
-    } catch (err) {
-      console.warn("uploadProofWithTimeout error:", err);
-      return null;
-    }
-  };
-
-  // PDF generator (menggunakan jsPDF) — diambil & sedikit disesuaikan dari checkout.jsx.
+  // PDF generator (sederhanakan bagian payment)
   const generateReceiptPDF = (order) => {
     try {
       if (!order) {
@@ -203,39 +147,18 @@ export default function Checkout() {
       doc.text(addressLines, 20, 92);
       let startY = 92 + addressLines.length * 5;
 
-      // Payment method / details
+      // Payment method
       doc.text(
         `Metode Pembayaran: ${(order.paymentMethod || "N/A").toUpperCase()}`,
         20,
         startY + 10
       );
-      if (order.paymentMethod === "bank") {
-        doc.text(`Bank: ${order.bank || "N/A"}`, 20, startY + 17);
-        doc.text(
-          `No. Rekening: ${order.accountNumber || "N/A"}`,
-          20,
-          startY + 24
-        );
-        startY += 14;
-      } else if (order.paymentMethod === "ewallet") {
-        doc.text(`E-wallet: ${order.ewallet || "N/A"}`, 20, startY + 17);
-        doc.text(
-          `No. Tujuan: ${order.ewalletNumber || "N/A"}`,
-          20,
-          startY + 24
-        );
-        startY += 14;
-      } else if (order.paymentMethod === "crypto") {
-        doc.text(`Wallet: ${order.wallet || "N/A"}`, 20, startY + 17);
-        doc.text(`Blockchain: ${order.blockchain || "N/A"}`, 20, startY + 24);
-        doc.text(`Token: ${order.token || "N/A"}`, 20, startY + 31);
-        startY += 21;
-      }
+      startY += 14;
 
       // Items (manual table)
       const tableRows = order.items || [];
       if (tableRows.length > 0) {
-        let tableY = startY + 25;
+        let tableY = startY + 10;
 
         // header
         doc.setFillColor(11, 25, 87);
@@ -341,7 +264,7 @@ export default function Checkout() {
       const newOrderRef = push(ordersRef);
       orderId = newOrderRef.key;
 
-      // Susun order object awal
+      // Susun order object awal (sederhana, hanya field yang relevan)
       const orderObj = {
         orderId,
         customerName,
@@ -359,21 +282,6 @@ export default function Checkout() {
         payment: {
           method: paymentMethod,
           status: paymentMethod === "cod" ? "pending" : "pending_payment",
-          proofName: null,
-          proofUrl: null,
-          bank: paymentMethod === "bank" ? selectedBank : null,
-          accountNumber:
-            paymentMethod === "bank"
-              ? process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"
-              : null,
-          ewallet: paymentMethod === "ewallet" ? selectedEwallet : null,
-          ewalletNumber:
-            paymentMethod === "ewallet"
-              ? process.env.REACT_APP_EWALLET_NUMBER || "08123456789"
-              : null,
-          walletAddress: paymentMethod === "crypto" ? wallet : null,
-          blockchain: paymentMethod === "crypto" ? "Ethereum" : null,
-          token: paymentMethod === "crypto" ? "ETH" : null,
           txId: null,
           paymentDeadlineInfo: getPaymentDeadline(),
         },
@@ -424,19 +332,6 @@ export default function Checkout() {
           shippingCost,
           total,
           paymentMethod,
-          bank: paymentMethod === "bank" ? selectedBank : null,
-          accountNumber:
-            paymentMethod === "bank"
-              ? process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"
-              : null,
-          ewallet: paymentMethod === "ewallet" ? selectedEwallet : null,
-          ewalletNumber:
-            paymentMethod === "ewallet"
-              ? process.env.REACT_APP_EWALLET_NUMBER || "08123456789"
-              : null,
-          wallet: paymentMethod === "crypto" ? wallet : null,
-          blockchain: paymentMethod === "crypto" ? "Ethereum" : null,
-          token: paymentMethod === "crypto" ? "ETH" : null,
           totalPaid: total,
         };
 
@@ -484,7 +379,6 @@ export default function Checkout() {
       console.log("Midtrans proxy response:", tokenResponse.status, tokenData);
 
       if (!tokenResponse.ok) {
-        // Tampilkan pesan lebih informatif, jangan biarkan Snap memunculkan pesan generic
         throw new Error(
           `Gagal membuat transaksi Midtrans. (${tokenResponse.status}) ${
             tokenData && tokenData.error ? tokenData.error : ""
@@ -511,7 +405,6 @@ export default function Checkout() {
             });
           } catch (err) {
             console.error("Update order after success failed:", err);
-            // jangan lempar error ke UI Midtrans — biarkan user lihat success di popup
           }
 
           dispatch({ type: "CLEAR_CART" });
@@ -527,19 +420,6 @@ export default function Checkout() {
             shippingCost,
             total,
             paymentMethod,
-            bank: paymentMethod === "bank" ? selectedBank : null,
-            accountNumber:
-              paymentMethod === "bank"
-                ? process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"
-                : null,
-            ewallet: paymentMethod === "ewallet" ? selectedEwallet : null,
-            ewalletNumber:
-              paymentMethod === "ewallet"
-                ? process.env.REACT_APP_EWALLET_NUMBER || "08123456789"
-                : null,
-            wallet: paymentMethod === "crypto" ? wallet : null,
-            blockchain: paymentMethod === "crypto" ? "Ethereum" : null,
-            token: paymentMethod === "crypto" ? "ETH" : null,
             totalPaid: total,
           };
 
@@ -579,19 +459,6 @@ export default function Checkout() {
             shippingCost,
             total,
             paymentMethod,
-            bank: paymentMethod === "bank" ? selectedBank : null,
-            accountNumber:
-              paymentMethod === "bank"
-                ? process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"
-                : null,
-            ewallet: paymentMethod === "ewallet" ? selectedEwallet : null,
-            ewalletNumber:
-              paymentMethod === "ewallet"
-                ? process.env.REACT_APP_EWALLET_NUMBER || "08123456789"
-                : null,
-            wallet: paymentMethod === "crypto" ? wallet : null,
-            blockchain: paymentMethod === "crypto" ? "Ethereum" : null,
-            token: paymentMethod === "crypto" ? "ETH" : null,
             totalPaid: total,
           };
 
@@ -606,7 +473,6 @@ export default function Checkout() {
         onError: (result) => {
           console.error("Midtrans error (snap):", result);
           setSubmitting(false);
-          // Berikan pesan yang lebih spesifik bila tersedia
           const msg =
             (result && (result.status_message || result.message)) ||
             "Terjadi kesalahan pembayaran. Silakan coba lagi.";
@@ -625,10 +491,10 @@ export default function Checkout() {
     }
   };
 
-  // Render input spesifik payment (sama style)
+  // Render input spesifik payment (hanya COD dan Midtrans)
   const renderPaymentInputs = () => {
     switch (paymentMethod) {
-      case "crypto":
+      case "midtrans":
         return (
           <div
             className="payment-section"
@@ -640,113 +506,28 @@ export default function Checkout() {
             }}
           >
             <h6 style={{ color: colors.primary, marginBottom: 15 }}>
-              🪙 Crypto Payment
+              💳 Pembayaran Online (Midtrans)
             </h6>
-            <div className="mb-3">
-              <label
-                className="form-label"
-                style={{ fontWeight: 600, color: colors.primary }}
-              >
-                Alamat Wallet
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="0x..."
-                value={wallet}
-                onChange={(e) => setWallet(e.target.value)}
-                disabled={submitting}
-                style={{ borderColor: colors.secondary }}
-              />
-              <div className="form-text" style={{ color: colors.textLight }}>
-                Harus berformat Ethereum address (0x...)
-              </div>
-            </div>
-          </div>
-        );
-      case "bank":
-        return (
-          <div
-            className="payment-section"
-            style={{
-              backgroundColor: colors.white,
-              padding: 20,
-              borderRadius: 12,
-              border: `2px solid ${colors.secondary}`,
-            }}
-          >
-            <h6 style={{ color: colors.primary, marginBottom: 15 }}>
-              🏦 Bank Transfer
-            </h6>
-            <div className="mb-3">
-              <label
-                className="form-label"
-                style={{ fontWeight: 600, color: colors.primary }}
-              >
-                Pilih Bank
-              </label>
-              <select
-                className="form-select"
-                value={selectedBank}
-                onChange={(e) => setSelectedBank(e.target.value)}
-                disabled={submitting}
-                style={{ borderColor: colors.secondary }}
-              >
-                <option value="BCA">BCA - Bank Central Asia</option>
-                <option value="BNI">BNI - Bank Negara Indonesia</option>
-                <option value="BRI">BRI - Bank Rakyat Indonesia</option>
-                <option value="Mandiri">Bank Mandiri</option>
-              </select>
-              <div className="form-text" style={{ color: colors.textLight }}>
-                Transfer ke:{" "}
-                {process.env.REACT_APP_BANK_ACCOUNT || "123-456-789"} (A/N
-                DSAVEE STICKER)
-              </div>
-            </div>
-          </div>
-        );
-      case "ewallet":
-        return (
-          <div
-            className="payment-section"
-            style={{
-              backgroundColor: colors.white,
-              padding: 20,
-              borderRadius: 12,
-              border: `2px solid ${colors.secondary}`,
-            }}
-          >
-            <h6 style={{ color: colors.primary, marginBottom: 15 }}>
-              📱 E-wallet
-            </h6>
-            <div className="mb-3">
-              <label
-                className="form-label"
-                style={{ fontWeight: 600, color: colors.primary }}
-              >
-                Pilih E-wallet
-              </label>
-              <select
-                className="form-select"
-                value={selectedEwallet}
-                onChange={(e) => setSelectedEwallet(e.target.value)}
-                disabled={submitting}
-                style={{ borderColor: colors.secondary }}
-              >
-                <option value="GoPay">GoPay</option>
-                <option value="ShopeePay">ShopeePay</option>
-                <option value="Dana">Dana</option>
-                <option value="OVO">OVO</option>
-              </select>
-              <div className="form-text" style={{ color: colors.textLight }}>
-                Transfer ke:{" "}
-                {process.env.REACT_APP_EWALLET_NUMBER || "08123456789"} (DSAVEE
-                STICKER)
-              </div>
+            <div
+              className="alert"
+              style={{
+                backgroundColor: colors.accent,
+                color: colors.primary,
+                border: `1px solid ${colors.secondary}`,
+              }}
+            >
+              <strong>
+                Setelah menekan konfirmasi, popup Midtrans akan muncul untuk
+                menyelesaikan pembayaran.
+              </strong>
+              <br />
+              Ikuti instruksi di popup (bisa menggunakan QR, e-wallet, atau
+              virtual account tergantung pilihan di Midtrans).
             </div>
           </div>
         );
       case "cod":
+      default:
         return (
           <div
             className="payment-section"
@@ -774,8 +555,6 @@ export default function Checkout() {
             </div>
           </div>
         );
-      default:
-        return null;
     }
   };
 
@@ -875,7 +654,7 @@ export default function Checkout() {
 
             <button
               className="btn"
-              onClick={() => (window.location.href = "./home")}
+              onClick={() => (window.location.href = "/")}
               style={{
                 backgroundColor: colors.secondary,
                 color: colors.primary,
@@ -1039,19 +818,9 @@ export default function Checkout() {
                 {[
                   { value: "cod", label: "COD", desc: "Bayar di Tempat" },
                   {
-                    value: "bank",
-                    label: "Bank Transfer",
-                    desc: "Transfer Bank",
-                  },
-                  {
-                    value: "ewallet",
-                    label: "E-wallet",
-                    desc: "Dompet Digital",
-                  },
-                  {
-                    value: "crypto",
-                    label: "Crypto",
-                    desc: "Pembayaran Crypto",
+                    value: "midtrans",
+                    label: "Midtrans",
+                    desc: "Pembayaran Online (Midtrans)",
                   },
                 ].map((m) => (
                   <div
@@ -1085,40 +854,6 @@ export default function Checkout() {
               </div>
 
               {renderPaymentInputs()}
-
-              {paymentMethod !== "cod" && (
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ fontWeight: 600, color: colors.primary }}>
-                    Bukti Pembayaran (Opsional)
-                  </label>
-                  <input
-                    type="file"
-                    onChange={(e) => {
-                      const f = e.target.files[0] || null;
-                      setProofFile(f);
-                      setProofNameDraft(f ? f.name : null);
-                    }}
-                    disabled={submitting}
-                    style={{
-                      width: "100%",
-                      padding: 8,
-                      borderRadius: 8,
-                      border: `1px solid ${colors.secondary}`,
-                    }}
-                  />
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: colors.textLight,
-                      marginTop: 6,
-                    }}
-                  >
-                    {proofNameDraft
-                      ? `Bukti (terdeteksi): ${proofNameDraft}`
-                      : "Upload bukti transfer untuk verifikasi lebih cepat"}
-                  </div>
-                </div>
-              )}
 
               <div style={{ marginTop: 12 }}>
                 <button
