@@ -1,9 +1,15 @@
-// src/pages/SignUp.jsx
 import React, { useState } from "react";
-import { auth } from "../firebase";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth, rtdb } from "../firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  updateProfile,
+  signOut,
+} from "firebase/auth";
+import { ref, get, set, update } from "firebase/database";
 import { Link, useNavigate } from "react-router-dom";
-import { FaEye, FaEyeSlash } from "react-icons/fa"; // ✅ import ikon mata
+import { FaEye, FaEyeSlash } from "react-icons/fa";
 import "../css/style.css";
 
 const SignUp = () => {
@@ -12,8 +18,8 @@ const SignUp = () => {
     password: "",
     confirmPassword: "",
   });
-  const [showPassword, setShowPassword] = useState(false); // 👁️ untuk kolom password
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false); // 👁️ untuk kolom konfirmasi
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
@@ -25,8 +31,28 @@ const SignUp = () => {
     return null;
   };
 
+  const writeUserToRTDB = async (user, extra = {}) => {
+    const userRef = ref(rtdb, `users/${user.uid}`);
+    const defaultName =
+      user.displayName ||
+      (user.email ? user.email.split("@")[0] : "Nama Pengguna");
+    const payload = {
+      uid: user.uid,
+      email: user.email || "",
+      name: extra.name || defaultName,
+      phone: extra.phone || "+62 812 3456 7890",
+      address:
+        extra.address || "Jl. Contoh Alamat No. 123, Kecamatan Airmadidi",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    // set akan membuat/overwrite; ini bagus untuk initial create
+    await set(userRef, payload);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
     const { email, password, confirmPassword } = formData;
 
     const validationError = validatePassword(password);
@@ -34,10 +60,52 @@ const SignUp = () => {
     if (password !== confirmPassword) return setError("Password tidak cocok.");
 
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      navigate("/login");
+      // create user in Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+      const user = userCredential.user;
+
+      // optional: set displayName in Auth (here using email localpart)
+      const defaultName = user.email
+        ? user.email.split("@")[0]
+        : "Nama Pengguna";
+      try {
+        await updateProfile(user, { displayName: defaultName });
+      } catch (e) {
+        console.warn(e);
+      }
+
+      // write user record in Realtime Database
+      await writeUserToRTDB(user, { name: defaultName });
+
+      // redirect to profile (or wherever)
+      navigate("/profile");
     } catch (err) {
-      setError(err.message);
+      console.error("Sign up error:", err);
+      // jika ada user authenticated tapi DB gagal, sign out to avoid partial state
+      try {
+        await signOut(auth);
+      } catch (_) {}
+      setError(err.message || "Gagal sign up. Coba lagi.");
+    }
+  };
+
+  // Google sign-in -> create or update DB record, then navigate
+  const handleGoogleSignIn = async () => {
+    setError("");
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      // tulis / merge data user di DB
+      await writeUserToRTDB(user);
+      navigate("/profile");
+    } catch (err) {
+      console.error("Google sign-in error:", err);
+      setError(err.message || "Gagal login dengan Google.");
     }
   };
 
@@ -46,7 +114,6 @@ const SignUp = () => {
       <h2>Sign Up</h2>
       {error && <p className="error">{error}</p>}
       <form onSubmit={handleSubmit}>
-        {/* Email */}
         <input
           type="email"
           placeholder="Email"
@@ -55,7 +122,6 @@ const SignUp = () => {
           required
         />
 
-        {/* Password */}
         <div className="password-container">
           <input
             type={showPassword ? "text" : "password"}
@@ -74,17 +140,13 @@ const SignUp = () => {
           </span>
         </div>
 
-        {/* Confirm Password */}
         <div className="password-container">
           <input
             type={showConfirmPassword ? "text" : "password"}
             placeholder="Confirm Password"
             value={formData.confirmPassword}
             onChange={(e) =>
-              setFormData({
-                ...formData,
-                confirmPassword: e.target.value,
-              })
+              setFormData({ ...formData, confirmPassword: e.target.value })
             }
             required
           />
@@ -98,7 +160,19 @@ const SignUp = () => {
 
         <button type="submit">Daftar</button>
       </form>
-      <p>
+
+      <div style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          className="google-btn"
+          style={{ cursor: "pointer" }}
+        >
+          Masuk dengan Google
+        </button>
+      </div>
+
+      <p style={{ marginTop: 12 }}>
         Sudah punya akun? <Link to="/login">Login</Link>
       </p>
     </div>

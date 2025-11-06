@@ -1,18 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { db } from "../firebase";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  onSnapshot,
-  orderBy,
-  updateDoc,
-  addDoc,
-  doc,
-} from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { useNavigate, Link } from "react-router-dom";
 import { getAuth, onAuthStateChanged, updateProfile } from "firebase/auth";
+import Logout from "./logout";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -23,6 +14,8 @@ export default function Profile() {
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
+
   const [editForm, setEditForm] = useState({
     name: "Nama Pengguna",
     phone: "+62 812 3456 7890",
@@ -30,11 +23,10 @@ export default function Profile() {
     email: "user@example.com",
   });
 
-  // Sample data untuk demo (tanpa perlu login)
   const sampleHistory = [
     {
       id: "o1",
-      items: [{ name: "Flower Sticker Pack" }, { name: "Character Stickers" }],
+      items: [{ name: "Flower Sticker Pack" }],
       totalAmount: 55000,
       createdAt: new Date("2024-01-15"),
       status: "delivered",
@@ -58,9 +50,10 @@ export default function Profile() {
     },
   ];
 
-  // Real-time user authentication (optional - tidak mandatory)
+  // =========================================================
+  // Auto-set user data di Firestore saat login/sign up
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setAuthLoading(false);
 
       if (currentUser) {
@@ -70,67 +63,56 @@ export default function Profile() {
           name: currentUser.displayName || "Nama Pengguna",
           email: currentUser.email || "user@example.com",
         }));
-        // Jika user login, fetch data real
-        fetchUserData(currentUser.uid);
+
+        const userRef = doc(db, "users", currentUser.uid);
+
+        try {
+          const userSnap = await getDoc(userRef);
+
+          if (!userSnap.exists()) {
+            // Dokumen baru -> buat dengan default
+            await setDoc(userRef, {
+              uid: currentUser.uid,
+              email: currentUser.email,
+              name: currentUser.displayName || "Nama Pengguna",
+              phone: "+62 812 3456 7890",
+              address: "Jl. Contoh Alamat No. 123, Kecamatan Airmadidi",
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+          } else {
+            // Update timestamp updatedAt
+            await updateDoc(userRef, { updatedAt: new Date() });
+          }
+
+          // Fetch data user setelah memastikan dokumen ada
+          const userData = (await getDoc(userRef)).data();
+          setEditForm({
+            name: userData.name,
+            email: userData.email,
+            phone: userData.phone,
+            address: userData.address,
+          });
+        } catch (err) {
+          console.error("Gagal menyimpan/mengambil data user:", err);
+        }
+
+        // Tetap set history demo
+        setHistory(sampleHistory);
       } else {
         setUser(null);
-        // Tetap tampilkan UI dengan sample data
         setHistory(sampleHistory);
         setLoading(false);
       }
     });
 
     return () => unsubscribe();
-  }, [auth, navigate]);
+  }, [auth]);
+  // =========================================================
 
-  // Fetch user profile data from Firestore (jika login)
-  const fetchUserData = async (userId) => {
-    try {
-      const userDoc = await getDocs(
-        query(collection(db, "users"), where("uid", "==", userId))
-      );
-      if (!userDoc.empty) {
-        const userData = userDoc.docs[0].data();
-        setEditForm((prev) => ({
-          ...prev,
-          name: userData.name || "Nama Pengguna",
-          phone: userData.phone || "+62 812 3456 7890",
-          address:
-            userData.address ||
-            "Jl. Contoh Alamat No. 123, Kecamatan Airmadidi",
-          email: userData.email || "user@example.com",
-        }));
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching user data:", error);
-      setLoading(false);
-    }
-  };
-
-  const handleLogin = () => {
-    navigate("/login");
-  };
-
-  const handleSignup = () => {
-    navigate("/signup");
-  };
-
-  const handleLogout = () => {
-    if (user) {
-      auth.signOut();
-      localStorage.removeItem("user");
-      localStorage.removeItem("token");
-    }
-    // Reset ke sample data setelah logout
-    setEditForm({
-      name: "Nama Pengguna",
-      phone: "+62 812 3456 7890",
-      address: "Jl. Contoh Alamat No. 123, Kecamatan Airmadidi",
-      email: "user@example.com",
-    });
-    setHistory(sampleHistory);
-  };
+  const handleLogin = () => navigate("/login");
+  const handleSignup = () => navigate("/signup");
+  const handleLogout = () => setShowLogout(true);
 
   const handleEditToggle = () => {
     if (!user) {
@@ -142,10 +124,7 @@ export default function Profile() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setEditForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setEditForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSaveProfile = async () => {
@@ -155,45 +134,25 @@ export default function Profile() {
     }
 
     try {
-      // Update in Firebase Auth (displayName)
+      // Update Firebase Auth
       if (auth.currentUser) {
-        await updateProfile(auth.currentUser, {
-          displayName: editForm.name,
-        });
+        await updateProfile(auth.currentUser, { displayName: editForm.name });
       }
 
-      // Update in Firestore
-      const userRef = collection(db, "users");
-      const userQuery = query(userRef, where("uid", "==", user.uid));
-      const userDoc = await getDocs(userQuery);
-
-      if (!userDoc.empty) {
-        // Update existing user document
-        const docId = userDoc.docs[0].id;
-        await updateDoc(doc(db, "users", docId), {
-          name: editForm.name,
-          phone: editForm.phone,
-          address: editForm.address,
-          email: editForm.email,
-          updatedAt: new Date(),
-        });
-      } else {
-        // Create new user document
-        await addDoc(collection(db, "users"), {
-          uid: user.uid,
-          email: editForm.email,
-          name: editForm.name,
-          phone: editForm.phone,
-          address: editForm.address,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      }
+      // Update Firestore
+      const userRef = doc(db, "users", user.uid);
+      await updateDoc(userRef, {
+        name: editForm.name,
+        phone: editForm.phone,
+        address: editForm.address,
+        email: editForm.email,
+        updatedAt: new Date(),
+      });
 
       setIsEditing(false);
       alert("Profile updated successfully!");
-    } catch (error) {
-      console.error("Error updating profile:", error);
+    } catch (err) {
+      console.error("Error updating profile:", err);
       alert("Error updating profile. Please try again.");
     }
   };
@@ -204,33 +163,29 @@ export default function Profile() {
     return date.toLocaleDateString("id-ID");
   };
 
-  // Tampilkan loading selama auth check
-  if (authLoading) {
+  if (showLogout) return <Logout />;
+
+  if (authLoading)
     return (
-      <div className="container my-5">
-        <div className="text-center">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-          <p className="mt-2">Loading profile...</p>
+      <div className="container my-5 text-center">
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Loading...</span>
         </div>
+        <p className="mt-2">Loading profile...</p>
       </div>
     );
-  }
 
   return (
     <div className="container my-5">
-      {/* Header Section */}
+      {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2>Profile</h2>
-          {user ? (
-            <p className="text-muted mb-0">Welcome back, {editForm.name}!</p>
-          ) : (
-            <p className="text-muted mb-0">
-              Demo Profile - Login to access real features
-            </p>
-          )}
+          <p className="text-muted mb-0">
+            {user
+              ? `Welcome back, ${editForm.name}!`
+              : "Demo Profile - Login to access real features"}
+          </p>
         </div>
         <div>
           {user ? (
@@ -238,7 +193,7 @@ export default function Profile() {
               Logout
             </button>
           ) : (
-            <div>
+            <>
               <button className="btn btn-primary me-2" onClick={handleLogin}>
                 Login
               </button>
@@ -248,12 +203,12 @@ export default function Profile() {
               >
                 Sign Up
               </button>
-            </div>
+            </>
           )}
         </div>
       </div>
 
-      {/* Profile Information */}
+      {/* Profile Info */}
       <div className="card mb-4">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-center mb-3">
@@ -283,7 +238,6 @@ export default function Profile() {
                     name="name"
                     value={editForm.name}
                     onChange={handleInputChange}
-                    placeholder="Enter your full name"
                   />
                 </div>
                 <div className="col-md-6 mb-3">
@@ -294,7 +248,6 @@ export default function Profile() {
                     name="email"
                     value={editForm.email}
                     onChange={handleInputChange}
-                    placeholder="Enter your email"
                   />
                 </div>
                 <div className="col-md-6 mb-3">
@@ -305,7 +258,6 @@ export default function Profile() {
                     name="phone"
                     value={editForm.phone}
                     onChange={handleInputChange}
-                    placeholder="+62 XXX XXXX XXXX"
                   />
                 </div>
                 <div className="col-md-6 mb-3">
@@ -316,7 +268,6 @@ export default function Profile() {
                     value={editForm.address}
                     onChange={handleInputChange}
                     rows="3"
-                    placeholder="Enter your complete address"
                   />
                 </div>
               </div>
@@ -347,7 +298,7 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* Order History Section */}
+      {/* Order History */}
       <div className="card mb-4">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-center">
@@ -370,9 +321,7 @@ export default function Profile() {
 
           {loading ? (
             <div className="text-center py-4">
-              <div className="spinner-border text-primary" role="status">
-                <span className="visually-hidden">Loading...</span>
-              </div>
+              <div className="spinner-border text-primary" role="status"></div>
               <p className="mt-2">Loading order history...</p>
             </div>
           ) : history.length > 0 ? (
@@ -392,8 +341,7 @@ export default function Profile() {
                     <tr key={order.id}>
                       <td>#{order.id?.slice(-6) || order.id}</td>
                       <td>
-                        {order.items?.map((item) => item.name).join(", ") ||
-                          "N/A"}
+                        {order.items?.map((i) => i.name).join(", ") || "N/A"}
                       </td>
                       <td>Rp {order.totalAmount?.toLocaleString() || "0"}</td>
                       <td>{formatDate(order.createdAt)}</td>
@@ -496,7 +444,6 @@ export default function Profile() {
           >
             Sign Up
           </button>
-          to access real features and save your data.
         </div>
       )}
     </div>
