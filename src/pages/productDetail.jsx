@@ -1,4 +1,3 @@
-// src/pages/ProductDetail.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getDatabase, ref, onValue, update } from "firebase/database";
@@ -11,19 +10,13 @@ export default function ProductDetail() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedVariant, setSelectedVariant] = useState(null);
+  const [availableColors, setAvailableColors] = useState([]); // dari DB
   const [selectedColor, setSelectedColor] = useState(null);
   const [qty, setQty] = useState(1);
   const dispatch = useCartDispatch();
 
-  // Warna yang tersedia untuk stiker
-  const availableColors = [
-    { name: "Merah", value: "#dc2626", code: "red" },
-    { name: "Biru", value: "#2563eb", code: "blue" },
-    { name: "Hijau", value: "#16a34a", code: "green" },
-  ];
-
   // Ongkir tetap
-  const shippingCost = 12000;
+  const shippingCost = 10000;
 
   useEffect(() => {
     if (!productId) {
@@ -39,21 +32,76 @@ export default function ProductDetail() {
       (snapshot) => {
         if (snapshot.exists()) {
           const productData = snapshot.val();
+
           setProduct({
             id: productId,
-            stock: 50, // Default stock jika tidak ada di database
+            stock: 50,
             ...productData,
           });
 
-          // Set default variant dan warna
+          // default variant jika ada
           if (productData.variants && productData.variants.length > 0) {
             setSelectedVariant(productData.variants[0]);
           } else if (productData.color) {
             setSelectedVariant(productData.color);
           }
 
-          // Set warna default ke merah
-          setSelectedColor(availableColors[0]);
+          // Build availableColors dari DB
+          if (
+            Array.isArray(productData.colorOptions) &&
+            productData.colorOptions.length > 0
+          ) {
+            const colors = productData.colorOptions.map((c, i) => ({
+              name: c.name || c.label || `Varian ${i + 1}`,
+              value: c.value || c.hex || null,
+              code: c.code || `color${i + 1}`,
+              image: c.image || null,
+              imageField: c.imageField || null,
+            }));
+            setAvailableColors(colors);
+            setSelectedColor(colors[0]);
+          } else {
+            // cari semua field yang mulai dengan 'image' (image, image1, image2, ...)
+            const keys = Object.keys(productData).filter(
+              (k) =>
+                typeof productData[k] === "string" &&
+                productData[k] &&
+                k.toLowerCase().startsWith("image")
+            );
+
+            if (keys.length > 0) {
+              const namesArr = Array.isArray(productData.colorNames)
+                ? productData.colorNames
+                : Array.isArray(productData.colorLabels)
+                ? productData.colorLabels
+                : null;
+
+              const colors = keys.map((key, idx) => ({
+                name:
+                  (namesArr && namesArr[idx]) ||
+                  (idx === 0 ? "Varian 1" : `Varian ${idx + 1}`),
+                value: null,
+                code: key,
+                image: productData[key] || null,
+                imageField: key,
+              }));
+              setAvailableColors(colors);
+              setSelectedColor(colors[0]);
+            } else {
+              // fallback single image
+              const fallback = [
+                {
+                  name: productData.name || "Default",
+                  value: null,
+                  code: "default",
+                  image: productData.image || null,
+                  imageField: productData.image ? "image" : null,
+                },
+              ];
+              setAvailableColors(fallback);
+              setSelectedColor(fallback[0]);
+            }
+          }
         } else {
           setProduct(null);
         }
@@ -68,13 +116,27 @@ export default function ProductDetail() {
     return () => unsubscribe();
   }, [productId]);
 
-  // Fungsi untuk update stok di Firebase
+  // pilih gambar berdasarkan selectedColor / product
+  function getImageForColor(product, color) {
+    if (!product) return "/images/placeholder.png";
+    if (!color) {
+      return product.image || "/images/placeholder.png";
+    }
+    if (color.image) return color.image;
+    if (color.imageField && product[color.imageField])
+      return product[color.imageField];
+    return product.image || "/images/placeholder.png";
+  }
+
+  const selectedImage = getImageForColor(product, selectedColor);
+
   const updateStock = async (productId, quantity) => {
     const db = getDatabase();
     const productRef = ref(db, `products/${productId}`);
 
     try {
-      const currentStock = product?.stock || 50;
+      // gunakan nullish coalescing agar 0 tetap 0
+      const currentStock = product?.stock ?? 50;
       const newStock = Math.max(0, currentStock - quantity);
 
       await update(productRef, {
@@ -88,13 +150,12 @@ export default function ProductDetail() {
     }
   };
 
-  // Fungsi untuk fallback description
   function getProductDescription(product) {
     if (product.description) {
       return product.description;
     }
 
-    const productName = product.name.toLowerCase();
+    const productName = (product.name || "").toLowerCase();
 
     if (
       productName.includes("juice") ||
@@ -122,47 +183,31 @@ export default function ProductDetail() {
   async function addToCart() {
     if (!product) return;
 
-    // Cek stok tersedia
-    const currentStock = product.stock || 50;
+    const currentStock = product?.stock ?? 50; // gunakan ?? bukan ||
     if (currentStock < qty) {
       alert(`Maaf, stok tidak mencukupi. Stok tersedia: ${currentStock}`);
       return;
     }
 
-    // Update stok di Firebase
-    const stockUpdated = await updateStock(product.id, qty);
+    // hanya tambahkan ke cart, jangan ubah stok
+    dispatch({
+      type: "ADD_ITEM",
+      payload: {
+        id: product.id,
+        name: product.name,
+        price: Number(product.price) || 0,
+        qty: Number(qty) || 1,
+        size: product.size,
+        image: selectedImage,
+        variant: selectedVariant,
+        color: selectedColor,
+        shippingCost,
+      },
+    });
 
-    if (stockUpdated) {
-      // Tambahkan ke cart
-      dispatch({
-        type: "ADD_ITEM",
-        payload: {
-          id: product.id,
-          name: product.name,
-          price: Number(product.price) || 0,
-          qty: Number(qty) || 1,
-          size: product.size,
-          image: product.image,
-          variant: selectedVariant,
-          color: selectedColor,
-          shippingCost: shippingCost,
-        },
-      });
-
-      // Update stok di state lokal
-      setProduct((prev) => ({
-        ...prev,
-        stock: Math.max(0, currentStock - qty),
-      }));
-
-      alert(
-        `${product.name} (${
-          selectedColor.name
-        }) berhasil ditambahkan ke cart! Stok tersisa: ${currentStock - qty}`
-      );
-    } else {
-      alert("Gagal update stok. Silakan coba lagi.");
-    }
+    alert(
+      `${product.name} (${selectedColor?.name}) berhasil ditambahkan ke cart!`
+    );
   }
 
   function getButtonPropsFromColor(color) {
@@ -180,13 +225,16 @@ export default function ProductDetail() {
     if (bsVariants.includes(color.code)) {
       return { className: `btn btn-${color.code} btn-lg` };
     }
-    return {
-      className: "btn btn-lg",
-      style: {
-        backgroundColor: color.value,
-        color: getContrastColor(color.value),
-      },
-    };
+    if (color.value) {
+      return {
+        className: "btn btn-lg",
+        style: {
+          backgroundColor: color.value,
+          color: getContrastColor(color.value),
+        },
+      };
+    }
+    return { className: "btn btn-lg" };
   }
 
   function getContrastColor(bg) {
@@ -248,7 +296,7 @@ export default function ProductDetail() {
     typeof rawPrice === "number" ? rawPrice : parseFloat(rawPrice);
   const safePrice = Number.isFinite(priceNum) ? priceNum : 0;
   const totalPrice = safePrice * qty + shippingCost;
-  const currentStock = product.stock || 50;
+  const currentStock = product.stock ?? 50;
 
   const btnProps = getButtonPropsFromColor(selectedColor);
 
@@ -257,9 +305,9 @@ export default function ProductDetail() {
       <div className="row">
         <div className="col-md-6">
           <img
-            src={product.image || "/images/placeholder.png"}
+            src={selectedImage || product.image || "/images/placeholder.png"}
             className="img-fluid rounded shadow-sm"
-            alt={product.name}
+            alt={`${product.name} - ${selectedColor?.name || ""}`}
             onError={(e) => {
               e.currentTarget.onerror = null;
               e.currentTarget.src = "/images/placeholder.png";
@@ -284,38 +332,68 @@ export default function ProductDetail() {
             </p>
           )}
 
-          {/* Stock Information */}
           <div className="stock-info mb-3">
-            <span
-              className={`badge ${
+            {(() => {
+              const bgClass =
                 currentStock > 10
                   ? "bg-success"
                   : currentStock > 0
                   ? "bg-warning"
-                  : "bg-danger"
-              }`}
-            >
-              <i className="uil uil-package me-1"></i>
-              Stok: {currentStock} pcs
-            </span>
+                  : "bg-danger";
+              const textClass =
+                bgClass === "bg-warning" ? "text-dark" : "text-white";
+              return (
+                <span
+                  className={`badge ${bgClass} ${textClass}`}
+                  style={{ opacity: 1 }}
+                >
+                  <i className="uil uil-package me-1"></i>
+                  Stok: {currentStock} pcs
+                </span>
+              );
+            })()}
+
             {currentStock <= 10 && currentStock > 0 && (
-              <small className="text-warning ms-2">Stok hampir habis!</small>
+              <small
+                className="ms-2"
+                style={{
+                  display: "inline-block",
+                  backgroundColor: "#ff7a00", // oranye
+                  color: "#ffffff",
+                  padding: "2px 8px",
+                  borderRadius: 12,
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  lineHeight: 1,
+                }}
+              >
+                Stok hampir habis!
+              </small>
             )}
             {currentStock === 0 && (
-              <small className="text-danger ms-2">Stok kosong</small>
+              <small
+                className="ms-2"
+                style={{
+                  display: "inline-block",
+                  backgroundColor: "#ff0000ff", // merah
+                  color: "#ffffff",
+                  padding: "2px 8px",
+                  borderRadius: 12,
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  lineHeight: 1,
+                }}
+              >
+                Stok Kosong!
+              </small>
             )}
           </div>
-
           <div className="price my-4">
             <h3 className="text-primary">Rp{safePrice.toFixed(2)}</h3>
           </div>
 
-          {/* Enhanced Description Section */}
           <div className="mb-4">
-            <h5 className="mb-3">
-              <i className="uil uil-info-circle me-2"></i>
-              Product Description
-            </h5>
+            <h5 className="mb-3">Product Description</h5>
             <div
               className="product-description text-muted"
               style={{
@@ -328,41 +406,77 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          {/* Color Selection Section */}
-          <div className="mb-4">
-            <h6 className="mb-3">
-              <i className="uil uil-palette me-2"></i>
-              Pilih Warna Stiker:
-            </h6>
-            <div className="d-flex gap-3">
-              {availableColors.map((color, index) => (
-                <div
-                  key={index}
-                  className={`color-option text-center ${
-                    selectedColor?.value === color.value ? "selected" : ""
-                  }`}
-                  onClick={() => setSelectedColor(color)}
-                  style={{ cursor: "pointer" }}
-                >
+          {/* HANYA tampilkan pilihan varian jika ada lebih dari 1 */}
+          {availableColors && availableColors.length > 1 && (
+            <div className="mb-4">
+              <h6 className="mb-3">
+                <i className="uil uil-palette me-2"></i>
+                Pilih Warna / Varian:
+              </h6>
+              <div className="d-flex gap-3 flex-wrap">
+                {availableColors.map((color, index) => (
                   <div
-                    className="color-swatch rounded-circle mb-2"
-                    style={{
-                      width: "40px",
-                      height: "40px",
-                      backgroundColor: color.value,
-                      border:
-                        selectedColor?.value === color.value
-                          ? "3px solid #007bff"
-                          : "2px solid #dee2e6",
-                      margin: "0 auto",
-                    }}
-                    title={color.name}
-                  ></div>
-                  <small className="text-muted">{color.name}</small>
-                </div>
-              ))}
+                    key={index}
+                    className={`color-option text-center ${
+                      selectedColor?.code === color.code ? "selected" : ""
+                    }`}
+                    onClick={() => setSelectedColor(color)}
+                    style={{ cursor: "pointer", width: 90 }}
+                  >
+                    {color.value ? (
+                      <div
+                        className="color-swatch rounded-circle mb-2"
+                        style={{
+                          width: "40px",
+                          height: "40px",
+                          backgroundColor: color.value,
+                          border:
+                            selectedColor?.code === color.code
+                              ? "3px solid #007bff"
+                              : "2px solid #dee2e6",
+                          margin: "0 auto",
+                        }}
+                        title={color.name}
+                      />
+                    ) : (
+                      <div style={{ marginBottom: 6 }}>
+                        <img
+                          src={
+                            color.image ||
+                            (color.imageField && product[color.imageField]) ||
+                            "/images/placeholder.png"
+                          }
+                          alt={color.name}
+                          style={{
+                            width: 48,
+                            height: 48,
+                            objectFit: "cover",
+                            borderRadius: 8,
+                            border:
+                              selectedColor?.code === color.code
+                                ? "3px solid #007bff"
+                                : "2px solid #dee2e6",
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    <small
+                      className="text-muted d-block"
+                      style={{
+                        maxWidth: 80,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {color.name}
+                    </small>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Variants Section */}
           {product.variants && product.variants.length > 0 && (
@@ -388,7 +502,6 @@ export default function ProductDetail() {
             </div>
           )}
 
-          {/* Shipping Information */}
           <div className="shipping-info mb-4 p-3 bg-light rounded">
             <h6 className="mb-2">
               <i className="uil uil-truck me-2"></i>
@@ -408,17 +521,11 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          {/* Quantity and Add to Cart Section */}
           <div className="d-flex align-items-center gap-3 mb-4">
             <label className="form-label mb-0 fw-bold">Quantity:</label>
-            <QuantityPicker
-              qty={qty}
-              onChange={setQty}
-              max={currentStock} // Batasi quantity dengan stok tersedia
-            />
+            <QuantityPicker qty={qty} onChange={setQty} max={currentStock} />
           </div>
 
-          {/* Total Price */}
           <div className="total-price mb-4 p-3 bg-primary text-white rounded">
             <div className="d-flex justify-content-between">
               <span>Subtotal:</span>
@@ -447,7 +554,6 @@ export default function ProductDetail() {
               : `Add to Cart (${selectedColor?.name})`}
           </button>
 
-          {/* Additional Info */}
           <div className="mt-4 pt-3 border-top">
             <div className="row text-center">
               <div className="col-4">
@@ -469,7 +575,7 @@ export default function ProductDetail() {
                   className="uil uil-package text-primary mb-2"
                   style={{ fontSize: "1.5rem" }}
                 ></i>
-                <p className="small mb-0">Stock: {currentStock}</p>
+                <p className="small mb-0 fw-bold">Stock: {currentStock}</p>{" "}
               </div>
             </div>
           </div>
