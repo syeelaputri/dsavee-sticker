@@ -1,4 +1,3 @@
-// src/pages/Checkout.jsx
 import React, { useState, useEffect, useRef } from "react";
 
 // Realtime Database (backend logic)

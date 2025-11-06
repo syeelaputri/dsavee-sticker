@@ -85,10 +85,10 @@ export default function AboutUs() {
                   <strong>Didirikan:</strong> 2025
                 </li>
                 <li>
-                  <strong>Bahan utama:</strong> Vinyl waterproof
+                  <strong>Bahan utama:</strong> Oracal
                 </li>
                 <li>
-                  <strong>Waktu produksi:</strong> 1–3 hari kerja
+                  <strong>Waktu produksi:</strong> 1–2 hari kerja
                 </li>
                 <li>
                   <strong>Pengiriman:</strong> Airmadidi
