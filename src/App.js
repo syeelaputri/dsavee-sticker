@@ -12,7 +12,7 @@ import Profile from "./pages/profile";
 import AboutUs from "./pages/aboutUs";
 import Login from "./pages/login";
 import SignUp from "./pages/signup";
-import AdminLogin from "./pages/AdminLogin";
+import AdminLogin from "./pages/adminLogin";
 import Logout from "./pages/logout";
 import OrderHistory from "./pages/orderHistory";
 import ProductDetail from "./pages/productDetail";

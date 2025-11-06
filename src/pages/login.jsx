@@ -1,25 +1,25 @@
 import React, { useState } from "react";
+import { auth, rtdb } from "../firebase";
 import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
 } from "firebase/auth";
-import { auth, rtdb } from "../firebase";
 import { ref, get, set, update } from "firebase/database";
 import { Link, useNavigate } from "react-router-dom";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import "../css/style.css";
 
 const ensureRTDBUser = async (user) => {
+  if (!user || !user.uid) return false;
   const userRef = ref(rtdb, `users/${user.uid}`);
   const snap = await get(userRef);
-  if (!snap.exists()) {
-    // jika tidak ada record di DB -> return false (caller akan sign out)
-    return false;
-  }
-  // ada record -> bisa update updatedAt dan return true
-  await update(userRef, { updatedAt: new Date().toISOString() });
+  if (!snap.exists()) return false;
+  // update updatedAt only
+  await update(userRef, { updatedAt: new Date().toISOString() }).catch(
+    () => {}
+  );
   return true;
 };
 
@@ -28,79 +28,87 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [processing, setProcessing] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
+    setProcessing(true);
     try {
       const credential = await signInWithEmailAndPassword(
         auth,
-        email,
+        email.trim(),
         password
       );
-      const user = credential.user || auth.currentUser;
-      if (!user) throw new Error("User tidak ditemukan.");
-
-      // cek RTDB apakah ada record untuk uid ini
-      const ok = await ensureRTDBUser(user);
+      const u = credential.user || auth.currentUser;
+      if (!u) throw new Error("User tidak ditemukan.");
+      const ok = await ensureRTDBUser(u);
       if (!ok) {
-        // kalau tidak ada, sign out dan beri pesan
         try {
           await signOut(auth);
         } catch (_) {}
         setError(
-          "Akun tidak ditemukan di database. Silakan daftar terlebih dahulu."
+          "Akun belum terdaftar di database. Silakan daftar terlebih dahulu."
         );
         return;
       }
-
-      // berhasil -> arahkan
+      // IMPORTANT: tidak melakukan merge guest -> server di Login
       navigate("/products");
     } catch (err) {
       console.error("Email login error:", err);
-      setError("Email atau password salah.");
+      switch (err.code) {
+        case "auth/user-not-found":
+          setError("Akun tidak ditemukan. Silakan daftar.");
+          break;
+        case "auth/wrong-password":
+          setError("Email atau password salah.");
+          break;
+        default:
+          setError("Gagal login. Periksa koneksi dan coba lagi.");
+      }
+    } finally {
+      setProcessing(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
     setError("");
+    setProcessing(true);
     const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      // jika user belum ada di RTDB, buat record
-      const userRef = ref(rtdb, `users/${user.uid}`);
-      const snapshot = await get(userRef);
-      if (!snapshot.exists()) {
-        await set(userRef, {
-          uid: user.uid,
-          email: user.email || "",
-          name:
-            user.displayName ||
-            (user.email ? user.email.split("@")[0] : "Nama Pengguna"),
-          phone: "+62 812 3456 7890",
-          address: "Jl. Contoh Alamat No. 123, Kecamatan Airmadidi",
+      const res = await signInWithPopup(auth, provider);
+      const u = res.user;
+      const userRef = ref(rtdb, `users/${u.uid}`);
+      const snap = await get(userRef);
+      if (!snap.exists()) {
+        // create profile only (no merge)
+        const payload = {
+          uid: u.uid,
+          email: u.email || "",
+          name: u.displayName || (u.email ? u.email.split("@")[0] : ""),
+          phone: "",
+          address: "",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        });
+        };
+        await set(userRef, payload);
+        // NOTE: do NOT merge guest cart here (this is login page)
       } else {
         await update(userRef, { updatedAt: new Date().toISOString() });
       }
       navigate("/products");
     } catch (err) {
       console.error("Google sign-in error:", err);
-      if (err.code === "auth/popup-closed-by-user") {
+      if (err.code === "auth/popup-closed-by-user")
         setError("Popup ditutup. Coba lagi.");
-      } else if (err.code === "auth/cancelled-popup-request") {
-        setError("Permintaan popup dibatalkan. Coba lagi.");
-      } else if (err.code === "auth/account-exists-with-different-credential") {
-        setError(
-          "Akun sudah ada dengan metode sign-in lain. Silakan gunakan metode tersebut."
-        );
-      } else {
-        setError("Gagal login dengan Google. Coba lagi.");
-      }
+      else if (err.code === "auth/cancelled-popup-request")
+        setError("Permintaan popup dibatalkan.");
+      else if (err.code === "auth/account-exists-with-different-credential")
+        setError("Akun sudah ada dengan metode sign-in lain.");
+      else setError("Gagal login dengan Google. Coba lagi.");
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -115,8 +123,8 @@ const Login = () => {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          disabled={processing}
         />
-
         <div className="password-container">
           <input
             type={showPassword ? "text" : "password"}
@@ -124,6 +132,7 @@ const Login = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            disabled={processing}
           />
           <span
             className="toggle-password"
@@ -133,8 +142,9 @@ const Login = () => {
             {showPassword ? <FaEyeSlash /> : <FaEye />}
           </span>
         </div>
-
-        <button type="submit">Login</button>
+        <button type="submit" disabled={processing}>
+          {processing ? "Memproses..." : "Login"}
+        </button>
       </form>
 
       <div style={{ marginTop: 12 }}>
@@ -148,7 +158,9 @@ const Login = () => {
             gap: 8,
             padding: "8px 12px",
             cursor: "pointer",
+            justifyContent: "center",
           }}
+          disabled={processing}
         >
           <img
             src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"

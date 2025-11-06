@@ -1,45 +1,75 @@
-import React, { createContext, useState, useContext } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { auth, rtdb } from "../firebase";
+import {
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+} from "firebase/auth";
+import { ref, get, set, update } from "firebase/database";
 
 const AuthContext = createContext();
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-};
+export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const login = async (email, password) => {
-    // Simulasi login - ganti dengan API call sebenarnya
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        if (email && password) {
-          setIsAuthenticated(true);
-          setUser({ email, name: "User" });
-          resolve();
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      try {
+        if (u) {
+          const userRef = ref(rtdb, `users/${u.uid}`);
+          const snap = await get(userRef);
+          if (!snap.exists()) {
+            const defaultName =
+              u.displayName || (u.email ? u.email.split("@")[0] : "Pengguna");
+            await set(userRef, {
+              uid: u.uid,
+              email: u.email,
+              name: defaultName,
+              phone: "",
+              address: "",
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              cart: [], // pastikan cart ada
+            });
+          } else {
+            // update timestamp dan pastikan cart ada
+            const data = snap.val();
+            const updates = { updatedAt: new Date().toISOString() };
+            if (!("cart" in data)) updates.cart = [];
+            await update(userRef, updates);
+          }
+          setUser(u);
         } else {
-          reject(new Error("Email atau password salah"));
+          setUser(null);
         }
-      }, 1000);
+      } catch (err) {
+        console.error("Auth error:", err);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     });
+    return () => unsub();
+  }, []);
+
+  const signInWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    const res = await signInWithPopup(auth, provider);
+    return res.user;
   };
 
-  const logout = () => {
-    setIsAuthenticated(false);
-    setUser(null);
+  const logout = async () => {
+    await signOut(auth);
   };
 
-  const value = {
-    isAuthenticated,
-    user,
-    login,
-    logout,
-  };
+  const value = { user, loading, signInWithGoogle, logout };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
 };

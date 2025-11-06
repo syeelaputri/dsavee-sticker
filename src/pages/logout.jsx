@@ -1,20 +1,45 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAuth, signOut } from "firebase/auth";
+import { useCart } from "../contexts/CartContext";
+import { useAuth } from "../contexts/AuthContext";
+
+const GUEST_KEY = "guest_cart_v1";
 
 const Logout = () => {
   const navigate = useNavigate();
-  const auth = getAuth();
-
+  const { cart } = useCart();
+  const { logout } = useAuth(); // gunakan logout dari AuthContext
   const [showModal, setShowModal] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(""); // status messages (e.g. "Sedang keluar...")
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    if (showModal && dialogRef.current) {
+      dialogRef.current.focus();
+    }
+  }, [showModal]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        handleCancel();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCancel = () => {
-    // Tutup modal dan kembali ke halaman sebelumnya
     setShowModal(false);
-    navigate(-1);
+    // navigasi kembali; jika tidak bisa, ke home
+    try {
+      navigate(-1);
+    } catch {
+      navigate("/");
+    }
   };
 
   const handleConfirm = async () => {
@@ -23,8 +48,23 @@ const Logout = () => {
     setMessage("Sedang keluar...");
 
     try {
-      await signOut(auth);
-      // hapus data lokal yang relevan
+      // Simpan current cart ke localStorage sebagai guest sebelum logout (jika ada)
+      try {
+        if (cart && Array.isArray(cart) && cart.length > 0) {
+          localStorage.setItem(GUEST_KEY, JSON.stringify(cart));
+        }
+      } catch (e) {
+        console.warn("Gagal menyimpan guest cart sebelum logout:", e);
+      }
+
+      // Panggil logout dari AuthContext (centralized)
+      if (typeof logout === "function") {
+        await logout();
+      } else {
+        console.warn("logout function not available in AuthContext. Skipping.");
+      }
+
+      // Hapus keys lokal yang lain (jika ada)
       localStorage.removeItem("admin");
       localStorage.removeItem("user");
       localStorage.removeItem("token");
@@ -32,10 +72,9 @@ const Logout = () => {
       setMessage("Anda telah keluar.");
       setLoading(false);
 
-      // beri waktu singkat untuk tampilkan pesan lalu redirect
       setTimeout(() => {
         navigate("/login");
-      }, 900);
+      }, 600);
     } catch (err) {
       console.error("Logout error:", err);
       setLoading(false);
@@ -44,7 +83,6 @@ const Logout = () => {
     }
   };
 
-  // Jika modal ditutup (showModal false), jangan render apa-apa — navigate sudah dilakukan di handleCancel
   if (!showModal) return null;
 
   return (
@@ -64,6 +102,8 @@ const Logout = () => {
       <div
         role="dialog"
         aria-modal="true"
+        ref={dialogRef}
+        tabIndex={-1}
         style={{
           width: "100%",
           maxWidth: 520,
@@ -73,7 +113,6 @@ const Logout = () => {
           padding: 20,
         }}
       >
-        {/* Jika sedang proses atau sudah ada message status, tampilkan status */}
         {loading || message ? (
           <div style={{ textAlign: "center", padding: "18px 8px" }}>
             {loading && (
@@ -111,7 +150,6 @@ const Logout = () => {
             )}
           </div>
         ) : (
-          // Modal konfirmasi
           <>
             <h5 style={{ marginTop: 0 }}>Konfirmasi Logout</h5>
             <p style={{ marginBottom: 16 }}>

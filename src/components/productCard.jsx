@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import QuantityPicker from "./quantityPicker";
-import { useCartDispatch } from "../contexts/index";
+import { useCart } from "../contexts/CartContext"; // pastikan path sesuai
 import { useNavigate } from "react-router-dom";
 
 export default function ProductCard({ product }) {
@@ -10,7 +10,7 @@ export default function ProductCard({ product }) {
       product?.color ||
       null
   );
-  const dispatch = useCartDispatch();
+  const { addToCart } = useCart(); // gunakan addToCart dari context
   const navigate = useNavigate();
 
   if (!product) {
@@ -20,25 +20,35 @@ export default function ProductCard({ product }) {
       </div>
     );
   }
+
   function goToProductDetail() {
     if (product?.id) {
       navigate(`/product/${product.id}`);
     }
   }
 
-  function addToCart() {
-    dispatch({
-      type: "ADD_ITEM",
-      payload: {
-        id: product.id,
-        name: product.name,
-        price: Number(product.price) || 0,
-        qty: Number(qty) || 1,
-        size: product.size,
-        image: product.image,
-        variant: selectedVariant,
-      },
+  function handleAddToCart() {
+    addToCart({
+      id: product.id,
+      name: product.name,
+      price: Number(product.price) || 0,
+      qty: Number(qty) || 1,
+      size: product.size,
+      image: product.image,
+      variant: selectedVariant,
     });
+
+    // feedback singkat ke user
+    try {
+      // gunakan toast jika ada, fallback ke alert
+      if (window?.toast) {
+        window.toast(`${product.name} berhasil ditambahkan ke cart.`);
+      } else {
+        alert(`${product.name} berhasil ditambahkan ke cart.`);
+      }
+    } catch {
+      // nothing
+    }
   }
 
   const rawPrice = product.price;
@@ -186,7 +196,7 @@ export default function ProductCard({ product }) {
         <button
           {...(btnProps.style ? { style: btnProps.style } : {})}
           className={btnProps.className + " add-to-cart-btn"}
-          onClick={addToCart}
+          onClick={handleAddToCart}
         >
           Add to Cart <i className="uil uil-shopping-cart ms-1"></i>
         </button>

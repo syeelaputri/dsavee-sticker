@@ -1,11 +1,15 @@
-// src/components/OffcanvasCart.jsx
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { useCartState, useCartDispatch } from "../contexts/index";
+import { useCart } from "../contexts/CartContext";
 
 export default function OffcanvasCart() {
-  const { items } = useCartState();
-  const dispatch = useCartDispatch();
+  const {
+    cart: items = [],
+    updateItemQty,
+    removeFromCart,
+    addToCart,
+    getCartTotal,
+  } = useCart();
   const navigate = useNavigate();
 
   const total = (items || []).reduce((s, i) => {
@@ -14,30 +18,34 @@ export default function OffcanvasCart() {
     return s + price * qty;
   }, 0);
 
-  // Fungsi tambah quantity
-  const increaseQty = (itemId) => {
-    const item = items.find((i) => i.id === itemId);
-    dispatch({
-      type: "UPDATE_QTY",
-      payload: { id: itemId, qty: (item.qty || 1) + 1 },
+  // increase qty by 1
+  const increaseQty = (item) => {
+    const newQty = (Number(item.qty) || 1) + 1;
+    updateItemQty({
+      _cid: item._cid,
+      id: item.id,
+      variant: item.variant,
+      qty: newQty,
     });
   };
 
-  // Fungsi kurangi quantity
-  const decreaseQty = (itemId) => {
-    const item = items.find((i) => i.id === itemId);
+  // decrease qty by 1 (min 1)
+  const decreaseQty = (item) => {
     const currentQty = Number(item.qty) || 1;
     if (currentQty > 1) {
-      dispatch({
-        type: "UPDATE_QTY",
-        payload: { id: itemId, qty: currentQty - 1 },
+      const newQty = currentQty - 1;
+      updateItemQty({
+        _cid: item._cid,
+        id: item.id,
+        variant: item.variant,
+        qty: newQty,
       });
     }
   };
 
-  // Fungsi hapus item
-  const removeItem = (itemId) => {
-    dispatch({ type: "REMOVE_ITEM", payload: itemId });
+  // remove item (pass object to removeFromCart)
+  const removeItem = (item) => {
+    removeFromCart({ _cid: item._cid, id: item.id, variant: item.variant });
   };
 
   const handleContinue = (e) => {
@@ -86,13 +94,11 @@ export default function OffcanvasCart() {
             )}
             {items.map((i, idx) => (
               <li
-                key={i.id ?? idx}
+                key={i._cid ?? i.id ?? idx}
                 className="list-group-item d-flex justify-content-between lh-sm"
               >
                 <div className="flex-grow-1">
-                  {/* ROW UNTUK GAMBAR & INFO PRODUK */}
                   <div className="row align-items-center">
-                    {/* GAMBAR PRODUK */}
                     <div className="col-3">
                       <img
                         src={i.image || "/placeholder-image.jpg"}
@@ -110,19 +116,17 @@ export default function OffcanvasCart() {
                       />
                     </div>
 
-                    {/* INFO PRODUK */}
                     <div className="col-9">
                       <h6 className="my-0">{i.name}</h6>
                       <small className="text-body-secondary">
                         {i.size || ""}
                       </small>
 
-                      {/* TOMBOL QUANTITY CONTROL */}
                       <div className="mt-2 d-flex align-items-center">
                         <div className="btn-group btn-group-sm me-3">
                           <button
                             className="btn btn-outline-secondary"
-                            onClick={() => decreaseQty(i.id)}
+                            onClick={() => decreaseQty(i)}
                             disabled={(Number(i.qty) || 1) <= 1}
                           >
                             -
@@ -132,16 +136,15 @@ export default function OffcanvasCart() {
                           </span>
                           <button
                             className="btn btn-outline-secondary"
-                            onClick={() => increaseQty(i.id)}
+                            onClick={() => increaseQty(i)}
                           >
                             +
                           </button>
                         </div>
 
-                        {/* TOMBOL HAPUS */}
                         <button
                           className="btn btn-outline-danger btn-sm"
-                          onClick={() => removeItem(i.id)}
+                          onClick={() => removeItem(i)}
                         >
                           Hapus
                         </button>
@@ -150,7 +153,6 @@ export default function OffcanvasCart() {
                   </div>
                 </div>
 
-                {/* SUBTOTAL */}
                 <div className="text-end ms-2">
                   <span className="text-body-secondary d-block">
                     Rp

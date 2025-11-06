@@ -2,15 +2,63 @@ import React, { useState } from "react";
 import { auth, rtdb } from "../firebase";
 import {
   createUserWithEmailAndPassword,
-  signInWithPopup,
   GoogleAuthProvider,
+  signInWithPopup,
   updateProfile,
   signOut,
 } from "firebase/auth";
-import { ref, get, set, update } from "firebase/database";
+import { ref, set, get } from "firebase/database";
 import { Link, useNavigate } from "react-router-dom";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import "../css/style.css";
+
+const GUEST_KEY = "guest_cart_v1";
+
+const makeProfilePayload = (user, extra = {}) => {
+  const name =
+    extra.name ??
+    user.displayName ??
+    (user.email ? user.email.split("@")[0] : "");
+  return {
+    uid: user.uid,
+    email: user.email || "",
+    name,
+    phone: extra.phone || "",
+    address: extra.address || "",
+    createdAt: extra.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+// helper read guest
+const readGuest = () => {
+  try {
+    const raw = localStorage.getItem(GUEST_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+// helper merge arrays by id+variant (sum qty)
+const mergeCarts = (base = [], incoming = []) => {
+  const map = new Map();
+  const add = (arr) =>
+    arr.forEach((it) => {
+      const key = `${it.id}::${it.variant ?? ""}`;
+      const existing = map.get(key);
+      if (existing) {
+        map.set(key, { ...existing, qty: (existing.qty || 0) + (it.qty || 0) });
+      } else {
+        map.set(key, { ...it });
+      }
+    });
+  add(base);
+  add(incoming);
+  return Array.from(map.values());
+};
 
 const SignUp = () => {
   const [formData, setFormData] = useState({
@@ -21,6 +69,7 @@ const SignUp = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
+  const [processing, setProcessing] = useState(false);
   const navigate = useNavigate();
 
   const validatePassword = (password) => {
@@ -31,81 +80,102 @@ const SignUp = () => {
     return null;
   };
 
-  const writeUserToRTDB = async (user, extra = {}) => {
-    const userRef = ref(rtdb, `users/${user.uid}`);
-    const defaultName =
-      user.displayName ||
-      (user.email ? user.email.split("@")[0] : "Nama Pengguna");
-    const payload = {
-      uid: user.uid,
-      email: user.email || "",
-      name: extra.name || defaultName,
-      phone: extra.phone || "+62 812 3456 7890",
-      address:
-        extra.address || "Jl. Contoh Alamat No. 123, Kecamatan Airmadidi",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    // set akan membuat/overwrite; ini bagus untuk initial create
-    await set(userRef, payload);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     const { email, password, confirmPassword } = formData;
-
-    const validationError = validatePassword(password);
-    if (validationError) return setError(validationError);
+    const vErr = validatePassword(password);
+    if (vErr) return setError(vErr);
     if (password !== confirmPassword) return setError("Password tidak cocok.");
-
+    setProcessing(true);
     try {
-      // create user in Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(
+      const cred = await createUserWithEmailAndPassword(
         auth,
-        email,
+        email.trim(),
         password
       );
-      const user = userCredential.user;
+      const u = cred.user;
 
-      // optional: set displayName in Auth (here using email localpart)
-      const defaultName = user.email
-        ? user.email.split("@")[0]
-        : "Nama Pengguna";
+      const defaultName = u.email ? u.email.split("@")[0] : "";
       try {
-        await updateProfile(user, { displayName: defaultName });
+        await updateProfile(u, { displayName: defaultName });
       } catch (e) {
-        console.warn(e);
+        /* ignore */
       }
 
-      // write user record in Realtime Database
-      await writeUserToRTDB(user, { name: defaultName });
+      const payload = makeProfilePayload(u, { name: defaultName });
+      const userRef = ref(rtdb, `users/${u.uid}`);
+      // set profile fields first
+      await set(userRef, payload);
 
-      // redirect to profile (or wherever)
+      // --- MERGE guest cart INTO user's cart (karena ini signup) ---
+      try {
+        const guestCart = readGuest(); // array
+        const userCartRef = ref(rtdb, `users/${u.uid}/cart`);
+        const snap = await get(userCartRef);
+        let serverCart = [];
+        if (snap.exists()) {
+          const val = snap.val();
+          if (Array.isArray(val)) serverCart = val;
+          else if (val && typeof val === "object")
+            serverCart = Object.values(val);
+        }
+        const merged = mergeCarts(serverCart, guestCart);
+        await set(userCartRef, merged);
+        // hapus guest local supaya merge tidak terjadi lagi
+        localStorage.removeItem(GUEST_KEY);
+      } catch (mergeErr) {
+        console.error("Merge cart during signup failed:", mergeErr);
+        // merge gagal tidak menghalangi signup - tetap lanjut
+      }
+
       navigate("/profile");
     } catch (err) {
       console.error("Sign up error:", err);
-      // jika ada user authenticated tapi DB gagal, sign out to avoid partial state
       try {
         await signOut(auth);
       } catch (_) {}
-      setError(err.message || "Gagal sign up. Coba lagi.");
+      setError(err?.message || "Gagal sign up. Coba lagi.");
+    } finally {
+      setProcessing(false);
     }
   };
 
-  // Google sign-in -> create or update DB record, then navigate
   const handleGoogleSignIn = async () => {
     setError("");
+    setProcessing(true);
     const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      // tulis / merge data user di DB
-      await writeUserToRTDB(user);
+      const res = await signInWithPopup(auth, provider);
+      const u = res.user;
+      const userRef = ref(rtdb, `users/${u.uid}`);
+      const snap = await get(userRef);
+      if (!snap.exists()) {
+        const payload = makeProfilePayload(u);
+        await set(userRef, payload);
+        // MERGE guest cart karena ini signup via Google (akun baru)
+        try {
+          const guestCart = readGuest();
+          const userCartRef = ref(rtdb, `users/${u.uid}/cart`);
+          const merged = mergeCarts([], guestCart);
+          await set(userCartRef, merged);
+          localStorage.removeItem(GUEST_KEY);
+        } catch (mergeErr) {
+          console.error("Merge cart after Google signup failed:", mergeErr);
+        }
+      } else {
+        // existing user: update timestamp only (no merge)
+        await set(userRef, {
+          ...snap.val(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
       navigate("/profile");
     } catch (err) {
-      console.error("Google sign-in error:", err);
-      setError(err.message || "Gagal login dengan Google.");
+      console.error("Google signup error:", err);
+      setError(err?.message || "Gagal login dengan Google.");
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -120,8 +190,8 @@ const SignUp = () => {
           value={formData.email}
           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           required
+          disabled={processing}
         />
-
         <div className="password-container">
           <input
             type={showPassword ? "text" : "password"}
@@ -131,6 +201,7 @@ const SignUp = () => {
               setFormData({ ...formData, password: e.target.value })
             }
             required
+            disabled={processing}
           />
           <span
             className="toggle-password"
@@ -139,7 +210,6 @@ const SignUp = () => {
             {showPassword ? <FaEyeSlash /> : <FaEye />}
           </span>
         </div>
-
         <div className="password-container">
           <input
             type={showConfirmPassword ? "text" : "password"}
@@ -149,6 +219,7 @@ const SignUp = () => {
               setFormData({ ...formData, confirmPassword: e.target.value })
             }
             required
+            disabled={processing}
           />
           <span
             className="toggle-password"
@@ -157,18 +228,33 @@ const SignUp = () => {
             {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
           </span>
         </div>
-
-        <button type="submit">Daftar</button>
+        <button type="submit" disabled={processing}>
+          {processing ? "Memproses..." : "Daftar"}
+        </button>
       </form>
 
       <div style={{ marginTop: 12 }}>
         <button
           type="button"
-          onClick={handleGoogleSignIn}
           className="google-btn"
-          style={{ cursor: "pointer" }}
+          onClick={handleGoogleSignIn}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 12px",
+            cursor: "pointer",
+            justifyContent: "center",
+          }}
+          disabled={processing}
         >
-          Masuk dengan Google
+          <img
+            src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+            alt="Google"
+            width="20"
+            height="20"
+          />
+          Sign up with Google
         </button>
       </div>
 
