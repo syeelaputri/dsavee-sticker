@@ -1,3 +1,4 @@
+// src/pages/checkout.jsx
 import React, { useState, useEffect, useRef } from "react";
 
 // Realtime Database (backend logic)
@@ -8,7 +9,12 @@ import {
   set,
   update,
   serverTimestamp,
+  onValue,
+  get,
 } from "firebase/database";
+
+// Auth
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 
 // PDF
 import { jsPDF } from "jspdf";
@@ -44,17 +50,113 @@ export default function Checkout() {
   const [orderCompleted, setOrderCompleted] = useState(false);
   const [orderData, setOrderData] = useState(null);
 
-  const { items } = useCartState();
+  const { items: ctxItems = [] } = useCartState();
   const dispatch = useCartDispatch();
 
-  // Normalisasi items
-  const normalizedItems = (items || []).map((it, idx) => ({
-    id: it.id ?? `i-${idx}`,
-    productId: it.id ?? `product-${idx}`,
+  // --- NEW: remote cart (RTDB) listener ---
+  const [remoteCartItems, setRemoteCartItems] = useState(null); // null = not loaded yet
+  const [authUser, setAuthUser] = useState(null);
+
+  // helper to normalize snapshot value to array of items
+  const snapshotToArray = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) {
+      // arr might contain null slots — filter
+      return val
+        .map((it, idx) => (it && typeof it === "object" ? { ...it } : null))
+        .filter(Boolean);
+    }
+    if (typeof val === "object") {
+      return Object.entries(val)
+        .map(([key, v]) => {
+          // filter out meta fields (createdAt, updatedAt, email, name, uid)
+          if (!v || typeof v !== "object") return null;
+          const looksLikeItem =
+            "id" in v || "name" in v || "price" in v || "qty" in v;
+          if (!looksLikeItem) return null;
+          return { _cid: key, ...v };
+        })
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubAuth = onAuthStateChanged(auth, async (u) => {
+      setAuthUser(u || null);
+
+      // reset remoteCartItems when auth changes; keep null until loaded
+      setRemoteCartItems(null);
+
+      if (u && u.uid) {
+        try {
+          const db = getDatabase();
+          const cartRef = dbRef(db, `users/${u.uid}/cart`);
+
+          // listen realtime cart for logged-in user
+          const off = onValue(
+            cartRef,
+            (snap) => {
+              const val = snap.val();
+              const arr = snapshotToArray(val);
+              // arr is array of cart item objects (or [] if none)
+              setRemoteCartItems(arr);
+            },
+            (err) => {
+              console.error("Error listening to user cart:", err);
+              setRemoteCartItems([]); // fail-safe
+            }
+          );
+
+          // also try to prefill customer data from users/{uid} profile if exists
+          try {
+            const userRef = dbRef(db, `users/${u.uid}`);
+            const userSnap = await get(userRef);
+            if (userSnap.exists()) {
+              const ud = userSnap.val();
+              if (!customerName && ud.name) setCustomerName(ud.name);
+              if (!phone && ud.phone) setPhone(ud.phone);
+              if (!email && ud.email) setEmail(ud.email);
+              if (!address && ud.address) setAddress(ud.address);
+            }
+          } catch (prefillErr) {
+            // ignore prefill errors
+            // console.warn("prefill user data failed:", prefillErr);
+          }
+
+          // cleanup when unmount or auth change
+          return () => off();
+        } catch (err) {
+          console.error("setup cart listener failed:", err);
+          setRemoteCartItems([]); // fail-safe
+        }
+      } else {
+        // guest: no remote cart
+        setRemoteCartItems(null);
+      }
+    });
+
+    return () => {
+      try {
+        unsubAuth();
+      } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // choose source items: prefer remoteCartItems when it's loaded (not null),
+  // otherwise fallback to context items (guest or not-yet-loaded remote)
+  const sourceItems = remoteCartItems !== null ? remoteCartItems : ctxItems;
+
+  // Normalisasi items (pakai sourceItems)
+  const normalizedItems = (sourceItems || []).map((it, idx) => ({
+    id: it.id ?? it.productId ?? `i-${idx}`,
+    productId: it.productId ?? it.id ?? `product-${idx}`,
     name: it.name ?? it.title ?? "Produk",
     price: Number(it.price) || 0,
-    qty: Number(it.qty) || 1,
-    size: it.size ?? "",
+    qty: Number(it.qty) || Number(it.quantity) || 1,
+    size: it.size ?? it.sizeName ?? "",
     image: it.image ?? null,
   }));
 
@@ -85,6 +187,11 @@ export default function Checkout() {
     script.setAttribute("data-client-key", "Mid-client-yncxXrxPbo1proU3");
     script.async = true;
     document.body.appendChild(script);
+    return () => {
+      try {
+        document.body.removeChild(script);
+      } catch (e) {}
+    };
   }, []);
 
   // Simple validation (dipakai sebelum submit)
@@ -258,7 +365,7 @@ export default function Checkout() {
     const db = getDatabase();
     let orderId = null;
     try {
-      // Buat entry order baru di Firebase RTDB
+      // Buat entry order baru di Firebase RTDB (global orders)
       const ordersRef = dbRef(db, "orders");
       const newOrderRef = push(ordersRef);
       orderId = newOrderRef.key;
@@ -294,6 +401,29 @@ export default function Checkout() {
       // Simpan order awal ke Firebase
       await set(newOrderRef, orderObj);
 
+      // ALSO: save order under users/{uid}/orders if user is logged in
+      try {
+        if (authUser && authUser.uid) {
+          const userOrderRef = dbRef(
+            db,
+            `users/${authUser.uid}/orders/${orderId}`
+          );
+          await set(userOrderRef, {
+            oid: orderId,
+            date: Date.now(),
+            method: paymentMethod,
+            total,
+            status: orderObj.status,
+            product: normalizedItems,
+          });
+        }
+      } catch (userOrderErr) {
+        console.warn(
+          "Gagal menyimpan order ke users/{uid}/orders:",
+          userOrderErr
+        );
+      }
+
       // Hapus draft jika ada
       if (draftIdRef.current) {
         try {
@@ -316,7 +446,7 @@ export default function Checkout() {
           updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
         });
 
-        // Kosongkan cart
+        // Kosongkan cart (context -> akan sinkron ke RTDB via CartProvider)
         dispatch({ type: "CLEAR_CART" });
 
         // Siapkan data untuk struk PDF
@@ -343,8 +473,7 @@ export default function Checkout() {
         return;
       }
 
-      // Non-COD: Gunakan Midtrans Snap
-      // Kumpulkan detail transaksi untuk Midtrans
+      // Non-COD: Gunakan Midtrans Snap (logika MIDTRANS tetap sama seperti awal)
       const snapParams = {
         transaction_details: {
           order_id: orderId,
@@ -402,6 +531,14 @@ export default function Checkout() {
               txId: midtransId,
               updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
             });
+
+            // Update users/{uid}/orders status (best-effort)
+            if (authUser && authUser.uid) {
+              await update(
+                dbRef(db, `users/${authUser.uid}/orders/${orderId}`),
+                { status: "confirmed", txId: midtransId }
+              );
+            }
           } catch (err) {
             console.error("Update order after success failed:", err);
           }
@@ -441,6 +578,13 @@ export default function Checkout() {
               txId: midtransId,
               updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
             });
+
+            if (authUser && authUser.uid) {
+              await update(
+                dbRef(db, `users/${authUser.uid}/orders/${orderId}`),
+                { status: "pending", txId: midtransId }
+              );
+            }
           } catch (err) {
             console.error("Update order after pending failed:", err);
           }
@@ -906,26 +1050,32 @@ export default function Checkout() {
             <h4 style={{ color: colors.primary, marginBottom: 12 }}>
               Ringkasan Order
             </h4>
+
             <div style={{ marginBottom: 8 }}>
-              {normalizedItems.map((it) => (
-                <div
-                  key={it.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: 6,
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{it.name}</div>
-                    <div style={{ fontSize: 12, color: colors.textLight }}>
-                      {it.size} • x{it.qty}
+              {normalizedItems.length === 0 ? (
+                <div className="text-muted">Keranjang kosong</div>
+              ) : (
+                normalizedItems.map((it) => (
+                  <div
+                    key={it.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: 6,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{it.name}</div>
+                      <div style={{ fontSize: 12, color: colors.textLight }}>
+                        {it.size} • x{it.qty}
+                      </div>
                     </div>
+                    <div>Rp{(it.price * it.qty).toLocaleString("id-ID")}</div>
                   </div>
-                  <div>Rp{(it.price * it.qty).toLocaleString("id-ID")}</div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
+
             <hr />
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <div>Subtotal</div>

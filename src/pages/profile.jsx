@@ -1,9 +1,8 @@
+// src/pages/Profile.jsx
 import React, { useEffect, useState } from "react";
-import { db } from "../firebase";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { getDatabase, ref, get, set, update } from "firebase/database";
 import { useNavigate, Link } from "react-router-dom";
 import { getAuth, onAuthStateChanged, updateProfile } from "firebase/auth";
-import Logout from "./logout";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -14,13 +13,12 @@ export default function Profile() {
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [showLogout, setShowLogout] = useState(false);
 
   const [editForm, setEditForm] = useState({
-    name: "Nama Pengguna",
-    phone: "+62 812 3456 7890",
-    address: "Jl. Contoh Alamat No. 123, Kecamatan Airmadidi",
-    email: "user@example.com",
+    name: "",
+    phone: "",
+    address: "",
+    email: "",
   });
 
   const sampleHistory = [
@@ -51,8 +49,9 @@ export default function Profile() {
   ];
 
   // =========================================================
-  // Auto-set user data di Firestore saat login/sign up
+  // listen auth changes dan sinkron ke Realtime Database (users/{uid})
   useEffect(() => {
+    const db = getDatabase();
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setAuthLoading(false);
 
@@ -64,42 +63,42 @@ export default function Profile() {
           email: currentUser.email || "user@example.com",
         }));
 
-        const userRef = doc(db, "users", currentUser.uid);
-
         try {
-          const userSnap = await getDoc(userRef);
+          const userRef = ref(db, `users/${currentUser.uid}`);
+          const snap = await get(userRef);
 
-          if (!userSnap.exists()) {
-            // Dokumen baru -> buat dengan default
-            await setDoc(userRef, {
+          if (!snap.exists()) {
+            // buat default record di RTDB
+            await set(userRef, {
               uid: currentUser.uid,
-              email: currentUser.email,
-              name: currentUser.displayName || "Nama Pengguna",
-              phone: "+62 812 3456 7890",
-              address: "Jl. Contoh Alamat No. 123, Kecamatan Airmadidi",
-              createdAt: new Date(),
-              updatedAt: new Date(),
+              email: currentUser.email || "",
+              name: currentUser.displayName || "",
+              phone: "",
+              address: "",
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
             });
           } else {
-            // Update timestamp updatedAt
-            await updateDoc(userRef, { updatedAt: new Date() });
+            // update hanya updatedAt
+            await update(userRef, { updatedAt: Date.now() });
           }
 
-          // Fetch data user setelah memastikan dokumen ada
-          const userData = (await getDoc(userRef)).data();
+          // ambil ulang data user dari RTDB
+          const fresh = await get(userRef);
+          const userData = fresh.exists() ? fresh.val() : {};
           setEditForm({
-            name: userData.name,
-            email: userData.email,
-            phone: userData.phone,
-            address: userData.address,
+            name: userData.name || currentUser.displayName || "",
+            email: userData.email || currentUser.email || "",
+            phone: userData.phone || "",
+            address: userData.address || "",
           });
         } catch (err) {
-          console.error("Gagal menyimpan/mengambil data user:", err);
+          console.error("Gagal menyimpan/mengambil data user (RTDB):", err);
         }
 
-        // Tetap set history demo
         setHistory(sampleHistory);
       } else {
+        // guest
         setUser(null);
         setHistory(sampleHistory);
         setLoading(false);
@@ -107,12 +106,24 @@ export default function Profile() {
     });
 
     return () => unsubscribe();
-  }, [auth]);
-  // =========================================================
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLogin = () => navigate("/login");
   const handleSignup = () => navigate("/signup");
-  const handleLogout = () => setShowLogout(true);
+
+  // logout -> signOut sehingga CartContext akan detect user=null dan load guest cart dari localStorage
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      // setelah signout, CartContext listener akan load guest cart
+      setUser(null);
+      navigate("/login");
+    } catch (err) {
+      console.error("Logout error:", err);
+      alert("Gagal logout. Coba lagi.");
+    }
+  };
 
   const handleEditToggle = () => {
     if (!user) {
@@ -134,25 +145,26 @@ export default function Profile() {
     }
 
     try {
-      // Update Firebase Auth
+      // update Firebase Auth displayName jika berubah
       if (auth.currentUser) {
         await updateProfile(auth.currentUser, { displayName: editForm.name });
       }
 
-      // Update Firestore
-      const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, {
+      // update Realtime Database
+      const db = getDatabase();
+      const userRef = ref(db, `users/${user.uid}`);
+      await update(userRef, {
         name: editForm.name,
         phone: editForm.phone,
         address: editForm.address,
         email: editForm.email,
-        updatedAt: new Date(),
+        updatedAt: Date.now(),
       });
 
       setIsEditing(false);
       alert("Profile updated successfully!");
     } catch (err) {
-      console.error("Error updating profile:", err);
+      console.error("Error updating profile (RTDB):", err);
       alert("Error updating profile. Please try again.");
     }
   };
@@ -162,8 +174,6 @@ export default function Profile() {
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     return date.toLocaleDateString("id-ID");
   };
-
-  if (showLogout) return <Logout />;
 
   if (authLoading)
     return (
@@ -427,7 +437,6 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* Demo Notice */}
       {!user && (
         <div className="alert alert-info mt-4">
           <strong>Demo Mode:</strong> This is a demonstration of the profile

@@ -12,7 +12,7 @@ const AdminLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
-  const ADMIN_EMAIL = "admin@dsavee.com"; // ubah sesuai kebutuhan
+  const ADMIN_EMAIL = "dsaveesticker@gmail.com"; // ubah sesuai kebutuhan
 
   const handleLogin = async (e) => {
     e.preventDefault();

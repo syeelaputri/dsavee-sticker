@@ -1,13 +1,23 @@
-import React, { useState } from "react";
+// src/pages/OrderHistory.jsx
+import React, { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
+import { getDatabase, ref as dbRef, onValue } from "firebase/database";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 
 const OrderHistory = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showProofModal, setShowProofModal] = useState(false);
   const [proofImage, setProofImage] = useState("");
+  const [orders, setOrders] = useState([]); // orders berasal dari RTDB (users/{uid}/orders)
+  const [loading, setLoading] = useState(true);
+  const [isDemo, setIsDemo] = useState(true);
 
-  // Sample data untuk tampilan UI
-  const orders = [
+  const auth = getAuth();
+  const db = getDatabase();
+  const ordersListenerRef = useRef(null);
+
+  // sample fallback data (UI tetap sama saat demo)
+  const sampleOrders = [
     {
       id: "ORD-001",
       items: [
@@ -17,35 +27,12 @@ const OrderHistory = () => {
           quantity: 2,
           color: "Pink",
         },
-        {
-          name: "Character  ",
-          price: 15000,
-          quantity: 1,
-          color: "Blue",
-        },
-        {
-          name: "Character Sticker ",
-          price: 15000,
-          quantity: 1,
-          color: "Blue",
-        },
-        {
-          name: "Character Sticker ",
-          price: 15000,
-          quantity: 1,
-          color: "Blue",
-        },
-        {
-          name: "Character Sticker ",
-          price: 15000,
-          quantity: 1,
-          color: "Blue",
-        },
+        { name: "Character Sticker", price: 15000, quantity: 1, color: "Blue" },
       ],
       totalAmount: 65000,
       paymentMethod: "Bank Transfer",
       status: "completed",
-      createdAt: new Date("2024-01-15"),
+      createdAt: new Date("2024-01-15").toISOString(),
       shippingAddress: "Jl. Contoh No. 123, Airmadidi",
     },
     {
@@ -61,7 +48,7 @@ const OrderHistory = () => {
       totalAmount: 60000,
       paymentMethod: "E-wallet",
       status: "processing",
-      createdAt: new Date("2024-01-18"),
+      createdAt: new Date("2024-01-18").toISOString(),
       shippingAddress: "Jl. Contoh No. 123, Airmadidi",
     },
     {
@@ -77,17 +64,14 @@ const OrderHistory = () => {
       totalAmount: 30000,
       paymentMethod: "Crypto Payment",
       status: "pending",
-      createdAt: new Date("2024-01-20"),
+      createdAt: new Date("2024-01-20").toISOString(),
       shippingAddress: "Jl. Contoh No. 123, Airmadidi",
     },
   ];
 
-  // Styles
+  // styles & helpers (tetap sama seperti file aslinya)
   const styles = {
-    container: {
-      minHeight: "100vh",
-      padding: "2rem 0",
-    },
+    container: { minHeight: "100vh", padding: "2rem 0" },
     header: {
       display: "flex",
       justifyContent: "space-between",
@@ -99,18 +83,9 @@ const OrderHistory = () => {
       borderRadius: "10px",
       boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
     },
-    tableHeader: {
-      backgroundColor: "#343a40",
-      color: "white",
-    },
-    badge: {
-      fontSize: "0.75rem",
-      padding: "0.5rem 0.75rem",
-    },
-    emptyState: {
-      padding: "60px 20px",
-      textAlign: "center",
-    },
+    tableHeader: { backgroundColor: "#343a40", color: "white" },
+    badge: { fontSize: "0.75rem", padding: "0.5rem 0.75rem" },
+    emptyState: { padding: "60px 20px", textAlign: "center" },
     modalOverlay: {
       position: "fixed",
       top: 0,
@@ -140,9 +115,7 @@ const OrderHistory = () => {
       justifyContent: "space-between",
       alignItems: "center",
     },
-    modalBody: {
-      padding: "1.5rem",
-    },
+    modalBody: { padding: "1.5rem" },
     modalFooter: {
       padding: "1rem 1.5rem",
       borderTop: "1px solid #dee2e6",
@@ -159,60 +132,23 @@ const OrderHistory = () => {
       textShadow: "1px 1px 2px rgba(0,0,0,0.5)",
       border: "1px solid #ddd",
     },
-    tableHover: {
-      transition: "background-color 0.2s ease",
-    },
+    tableHover: { transition: "background-color 0.2s ease" },
   };
 
-  // Media query styles
   const mediaQueryStyles = `
     @media (max-width: 768px) {
-      .table-responsive {
-        font-size: 0.875rem;
-      }
-      
-      .btn-sm {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.75rem;
-      }
-      
-      .modal-content {
-        margin: 1rem;
-        max-width: 95%;
-      }
-      
-      .header {
-        flex-direction: column;
-        gap: 1rem;
-        text-align: center;
-      }
+      .table-responsive { font-size: 0.875rem; }
+      .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+      .modal-content { margin: 1rem; max-width: 95%; }
+      .header { flex-direction: column; gap: 1rem; text-align: center; }
     }
-
     @media (max-width: 576px) {
-      .table th, .table td {
-        padding: 0.5rem;
-      }
-      
-      .btn-group {
-        flex-direction: column;
-        gap: 0.25rem;
-      }
+      .table th, .table td { padding: 0.5rem; }
+      .btn-group { flex-direction: column; gap: 0.25rem; }
     }
-
-    /* Hover effects */
-    .table-hover tbody tr:hover {
-      background-color: rgba(0,123,255,0.05) !important;
-    }
-
-    .btn-outline-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
-
-    .btn:hover {
-      transform: translateY(-1px);
-      transition: all 0.2s ease;
-    }
+    .table-hover tbody tr:hover { background-color: rgba(0,123,255,0.05) !important; }
+    .btn-outline-primary:hover { transform: translateY(-1px); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+    .btn:hover { transform: translateY(-1px); transition: all 0.2s ease; }
   `;
 
   const getStatusBadge = (status) => {
@@ -238,8 +174,8 @@ const OrderHistory = () => {
         text: "Cancelled",
       },
     };
-
-    const config = statusConfig[status.toLowerCase()] || statusConfig.pending;
+    const config =
+      statusConfig[(status || "").toLowerCase()] || statusConfig.pending;
     return (
       <span style={{ ...styles.badge, ...config.style }} className="badge">
         {config.text}
@@ -255,11 +191,16 @@ const OrderHistory = () => {
       failed: "Pembayaran gagal atau waktu bayar habis",
       cancelled: "Pesanan dibatalkan",
     };
-    return descriptions[status.toLowerCase()] || "Status tidak diketahui";
+    return (
+      descriptions[(status || "").toLowerCase()] || "Status tidak diketahui"
+    );
   };
 
-  const formatDate = (date) => {
-    return new Date(date).toLocaleDateString("id-ID", {
+  const formatDate = (dateInput) => {
+    if (!dateInput) return "N/A";
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return "N/A";
+    return d.toLocaleDateString("id-ID", {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -268,44 +209,145 @@ const OrderHistory = () => {
     });
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat("id-ID", {
+  const formatPrice = (price) =>
+    new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
       minimumFractionDigits: 0,
-    }).format(price);
-  };
+    }).format(Number(price || 0));
 
-  const handleViewDetails = (order) => {
-    setSelectedOrder(order);
-  };
-
-  const handleCloseDetails = () => {
-    setSelectedOrder(null);
-  };
-
+  const handleViewDetails = (order) => setSelectedOrder(order);
+  const handleCloseDetails = () => setSelectedOrder(null);
   const handleCloseProofModal = () => {
     setShowProofModal(false);
     setProofImage("");
   };
-
   const handleSubmitProof = (orderId) => {
-    // Simpan proof of payment (placeholder function)
     console.log("Submitting proof for order:", orderId, proofImage);
     alert("Proof of payment submitted successfully!");
     setShowProofModal(false);
     setProofImage("");
   };
+  const needsProofOfPayment = (paymentMethod) =>
+    ["Bank Transfer", "E-wallet", "Crypto Payment"].includes(paymentMethod);
 
-  const needsProofOfPayment = (paymentMethod) => {
-    return ["Bank Transfer", "E-wallet", "Crypto Payment"].includes(
-      paymentMethod
-    );
-  };
+  // listen auth changes -> attach RTDB listener ke users/{uid}/orders
+  useEffect(() => {
+    setLoading(true);
+    const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
+      // clear previous orders listener
+      if (ordersListenerRef.current) {
+        try {
+          ordersListenerRef.current();
+        } catch (e) {}
+        ordersListenerRef.current = null;
+      }
+
+      if (currentUser && currentUser.uid) {
+        setIsDemo(false);
+
+        const userOrdersRef = dbRef(db, `users/${currentUser.uid}/orders`);
+        const off = onValue(
+          userOrdersRef,
+          (snap) => {
+            const val = snap.val();
+            let arr = [];
+
+            if (!val) {
+              arr = [];
+            } else if (Array.isArray(val)) {
+              // array -> filter null holes and normalize
+              arr = val
+                .map((it, idx) =>
+                  it ? { id: it.oid || it.id || `ord-${idx}`, ...it } : null
+                )
+                .filter(Boolean);
+            } else if (typeof val === "object") {
+              // object keyed by orderId
+              arr = Object.entries(val).map(([key, v]) => {
+                // normalize: ensure items array exists
+                let items = v.product ?? v.items ?? v.products ?? [];
+                if (
+                  items &&
+                  typeof items === "object" &&
+                  !Array.isArray(items)
+                ) {
+                  // keyed object -> convert to array
+                  items = Object.values(items);
+                }
+                return {
+                  id: v.oid || v.id || key,
+                  items,
+                  totalAmount: v.total ?? v.totalAmount ?? v.totalPrice ?? 0,
+                  paymentMethod:
+                    v.method ?? v.paymentMethod ?? v.payment ?? "Unknown",
+                  status: v.status ?? "pending",
+                  createdAt:
+                    v.date ?? v.createdAt ?? v.timestamp ?? v.time ?? null,
+                  shippingAddress: v.shippingAddress ?? v.address ?? null,
+                  raw: v,
+                };
+              });
+            } else {
+              arr = [];
+            }
+
+            // ensure createdAt is consistent (toISOString or timestamp)
+            arr = arr.map((o) => ({
+              ...o,
+              createdAt: o.createdAt
+                ? typeof o.createdAt === "number"
+                  ? new Date(o.createdAt).toISOString()
+                  : o.createdAt
+                : null,
+              totalAmount: Number(o.totalAmount || 0),
+            }));
+
+            // sort by date desc if possible
+            arr.sort((a, b) => {
+              const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return tb - ta;
+            });
+
+            setOrders(arr);
+            setLoading(false);
+          },
+          (err) => {
+            console.error("onValue orders error:", err);
+            setOrders([]);
+            setLoading(false);
+          }
+        );
+
+        // store off function
+        ordersListenerRef.current = () => off();
+      } else {
+        // not logged in -> demo mode
+        setIsDemo(true);
+        setOrders(sampleOrders);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      // cleanup auth listener
+      try {
+        unsubAuth();
+      } catch (e) {}
+      // cleanup orders listener
+      if (ordersListenerRef.current) {
+        try {
+          ordersListenerRef.current();
+        } catch (e) {}
+        ordersListenerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div style={styles.container}>
-      {/* Inject CSS media queries and hover effects */}
       <style>{mediaQueryStyles}</style>
 
       <div className="container">
@@ -316,14 +358,16 @@ const OrderHistory = () => {
               <span className="text-muted">{orders.length} pesanan</span>
             </div>
 
-            {/* Demo Notice */}
-            <div className="alert alert-info mb-4">
-              <strong>Demo Mode:</strong> Menampilkan sample data order history.
-              <Link to="/login" className="alert-link ms-1">
-                Login
-              </Link>{" "}
-              untuk mengakses fitur lengkap.
-            </div>
+            {isDemo && (
+              <div className="alert alert-info mb-4">
+                <strong>Demo Mode:</strong> Menampilkan sample data order
+                history.
+                <Link to="/login" className="alert-link ms-1">
+                  Login
+                </Link>{" "}
+                untuk mengakses fitur lengkap.
+              </div>
+            )}
 
             {orders.length === 0 ? (
               <div className="text-center py-5">
@@ -376,8 +420,7 @@ const OrderHistory = () => {
                                   className="btn btn-sm btn-outline-primary me-2"
                                   onClick={() => handleViewDetails(order)}
                                 >
-                                  <i className="fas fa-eye me-1"></i>
-                                  Detail
+                                  <i className="fas fa-eye me-1"></i> Detail
                                 </button>
                                 {needsProofOfPayment(order.paymentMethod) &&
                                   order.status === "pending" && (
@@ -388,7 +431,7 @@ const OrderHistory = () => {
                                         setShowProofModal(true);
                                       }}
                                     >
-                                      <i className="fas fa-upload me-1"></i>
+                                      <i className="fas fa-upload me-1"></i>{" "}
                                       Upload Proof
                                     </button>
                                   )}
@@ -472,26 +515,44 @@ const OrderHistory = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedOrder.items?.map((item, index) => (
-                      <tr key={index}>
-                        <td>{item.name}</td>
-                        <td>
-                          {item.color && (
-                            <span
-                              style={{
-                                ...styles.colorBadge,
-                                backgroundColor: item.color.toLowerCase(),
-                              }}
-                            >
-                              {item.color}
-                            </span>
-                          )}
+                    {Array.isArray(selectedOrder.items) &&
+                    selectedOrder.items.length > 0 ? (
+                      selectedOrder.items.map((item, index) => (
+                        <tr key={index}>
+                          <td>{item.name}</td>
+                          <td>
+                            {item.color && (
+                              <span
+                                style={{
+                                  ...styles.colorBadge,
+                                  backgroundColor: (
+                                    item.color || ""
+                                  ).toLowerCase(),
+                                }}
+                              >
+                                {item.color}
+                              </span>
+                            )}
+                          </td>
+                          <td>{item.quantity ?? item.qty ?? 1}</td>
+                          <td>
+                            {formatPrice(item.price ?? item.unitPrice ?? 0)}
+                          </td>
+                          <td>
+                            {formatPrice(
+                              (item.price ?? item.unitPrice ?? 0) *
+                                (item.quantity ?? item.qty ?? 1)
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="5" className="text-center">
+                          No items data
                         </td>
-                        <td>{item.quantity}</td>
-                        <td>{formatPrice(item.price)}</td>
-                        <td>{formatPrice(item.price * item.quantity)}</td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                   <tfoot>
                     <tr>
