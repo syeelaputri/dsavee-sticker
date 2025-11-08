@@ -3,15 +3,61 @@ import React, { useEffect, useState } from "react";
 import ProductCard from "./productCard"; // sesuaikan nama file/kapitalisasi jika diperlukan
 import { getDatabase, ref, onValue } from "firebase/database";
 
-export default function ProductGrid({ products: productsProp }) {
-  // productsProp = optional array passed dari parent; kalau tidak ada kita pakai state internal
-  const [products, setProducts] = useState(productsProp ?? DEFAULT_PRODUCTS);
+/**
+ * ProductGrid
+ * props:
+ *  - products (optional): array produk dari parent (jika parent sudah melakukan query)
+ *  - filterKeyword (optional): satu kata kunci filter, mis: 'animal', 'anime', 'cute', ...
+ */
+export default function ProductGrid({
+  products: productsProp = null,
+  filterKeyword = null,
+}) {
+  // Semua produk yang kita punya (sumber = prop atau DB)
+  const [allProducts, setAllProducts] = useState(
+    Array.isArray(productsProp) ? productsProp : []
+  );
+  // Produk yang akan ditampilkan (setelah filter)
+  const [displayProducts, setDisplayProducts] = useState(
+    Array.isArray(productsProp) && productsProp.length > 0
+      ? productsProp
+      : DEFAULT_PRODUCTS
+  );
+  const [loading, setLoading] = useState(productsProp ? false : true);
 
+  // Helper: normalisasi keyword field product -> array lowercased
+  const normalizeKeywords = (p) => {
+    if (!p) return [];
+    const k = p.keyword ?? p.keywords ?? p.tags ?? null;
+    if (!k) return [];
+    if (Array.isArray(k))
+      return k.map((x) => String(x).toLowerCase().trim()).filter(Boolean);
+    // string -> split by comma/semicolon/pipe/slash/whitespace
+    return String(k)
+      .toLowerCase()
+      .split(/[,;|\/\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  };
+
+  const matchesFilter = (p, fk) => {
+    if (!fk) return true; // no filter => always match
+    const needle = String(fk).toLowerCase().trim();
+    const kws = normalizeKeywords(p);
+    if (kws.length === 0) return false;
+    return kws.includes(needle);
+  };
+
+  // 1) Jika tidak ada productsProp, ambil dari RTDB
   useEffect(() => {
-    // jika parent memberikan products lewat props, kita tidak override dengan DB (opsional)
-    if (Array.isArray(productsProp) && productsProp.length > 0) return;
+    if (Array.isArray(productsProp) && productsProp.length > 0) {
+      // parent memberikan products -> gunakan itu
+      setAllProducts(productsProp);
+      setLoading(false);
+      return;
+    }
 
-    // Ambil semua produk dari Realtime Database pada node "products"
+    setLoading(true);
     const db = getDatabase();
     const productsRef = ref(db, "products");
 
@@ -20,36 +66,69 @@ export default function ProductGrid({ products: productsProp }) {
       (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.val();
-          // data kemungkinan berbentuk object { id1: {...}, id2: {...} }
+          // normalisasi object -> array
           const list = Array.isArray(data)
             ? data.map((item, idx) => ({ id: item?.id ?? idx, ...item }))
             : Object.keys(data).map((key) => ({ id: key, ...data[key] }));
-          setProducts(list);
+          setAllProducts(list);
         } else {
-          // jika tidak ada data, biarkan tetap pakai DEFAULT_PRODUCTS
           console.log("No data available at 'products' path");
-          setProducts(DEFAULT_PRODUCTS);
+          setAllProducts(DEFAULT_PRODUCTS);
         }
+        setLoading(false);
       },
       (error) => {
         console.error("Firebase onValue error:", error);
-        setProducts(DEFAULT_PRODUCTS);
+        setAllProducts(DEFAULT_PRODUCTS);
+        setLoading(false);
       }
     );
 
-    // cleanup listener saat komponen unmount
     return () => {
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [productsProp]); // re-run jika props berubah
+  }, [productsProp]);
+
+  // 2) Apply filter setiap kali allProducts atau filterKeyword berubah
+  useEffect(() => {
+    const fk = filterKeyword
+      ? String(filterKeyword).toLowerCase().trim()
+      : null;
+    if (!fk) {
+      // no filter -> tampilkan semua (atau fallback)
+      if (Array.isArray(allProducts) && allProducts.length > 0)
+        setDisplayProducts(allProducts);
+      else setDisplayProducts(DEFAULT_PRODUCTS);
+      return;
+    }
+
+    const filtered = (allProducts || []).filter((p) => matchesFilter(p, fk));
+    setDisplayProducts(filtered);
+  }, [allProducts, filterKeyword]);
 
   return (
-    <div className="product-grid row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5">
-      {products.map((p) => (
-        <div className="col" key={p.id}>
-          <ProductCard product={p} />
+    <div>
+      {loading && (
+        <div className="text-center py-4">
+          <div className="spinner-border" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
         </div>
-      ))}
+      )}
+
+      {!loading && displayProducts.length === 0 && (
+        <div className="text-center py-4 text-muted">
+          <p>Tidak ada produk ditemukan untuk filter "{filterKeyword}".</p>
+        </div>
+      )}
+
+      <div className="product-grid row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5">
+        {displayProducts.map((p) => (
+          <div className="col" key={p.id}>
+            <ProductCard product={p} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -62,12 +141,14 @@ const DEFAULT_PRODUCTS = [
     price: 18.0,
     image: "/images/thumb-bananas.png",
     size: "500ml",
+    keyword: "food",
   },
   {
     id: "p2",
-    name: "Biscuits",
+    name: "Cute Sticker Pack",
     price: 12.5,
     image: "/images/thumb-biscuits.png",
-    size: "200g",
+    size: "5 x 5 cm",
+    keyword: "cute,anime",
   },
 ];

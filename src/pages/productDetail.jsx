@@ -335,7 +335,21 @@ export default function ProductDetail() {
   }
 
   function getButtonPropsFromColor(color) {
-    if (!color) return { className: "btn btn-primary btn-lg" };
+    // Warna dasar orange cerah (#ffc43f)
+    const orange = "#ffc43f";
+    const white = "#ffffff"; // putih supaya kontras dan tetap elegan
+
+    if (!color) {
+      return {
+        className: "btn btn-lg",
+        style: {
+          backgroundColor: orange,
+          color: white,
+          border: "1px solid #e0d6c5",
+        },
+      };
+    }
+
     const bsVariants = [
       "primary",
       "secondary",
@@ -346,9 +360,17 @@ export default function ProductDetail() {
       "light",
       "dark",
     ];
+
     if (bsVariants.includes(color.code)) {
-      return { className: `btn btn-${color.code} btn-lg` };
+      return {
+        className: `btn btn-${color.code} btn-lg`,
+        style: {
+          backgroundColor: orange,
+          color: white,
+        },
+      };
     }
+
     if (color.value) {
       return {
         className: "btn btn-lg",
@@ -358,7 +380,14 @@ export default function ProductDetail() {
         },
       };
     }
-    return { className: "btn btn-lg" };
+
+    return {
+      className: "btn btn-lg",
+      style: {
+        backgroundColor: orange,
+        color: white,
+      },
+    };
   }
 
   function getContrastColor(bg) {

@@ -1,4 +1,3 @@
-// src/pages/SignUp.jsx
 import React, { useState } from "react";
 import { auth, rtdb } from "../firebase";
 import {

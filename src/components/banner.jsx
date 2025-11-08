@@ -10,8 +10,10 @@ export default function Banner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const mounted = useRef(true);
-
   const [isLarge, setIsLarge] = useState(false);
+  const swiperRef = useRef(null);
+  const hoverIntervalRef = useRef(null);
+
   useEffect(() => {
     function handleResize() {
       setIsLarge(
@@ -25,14 +27,7 @@ export default function Banner() {
 
   useEffect(() => {
     mounted.current = true;
-    const dbInstance = (() => {
-      try {
-        return getDatabase();
-      } catch (e) {
-        return getDatabase();
-      }
-    })();
-
+    const dbInstance = getDatabase();
     const bannersRef = ref(dbInstance, "banners");
 
     const unsubscribe = onValue(
@@ -80,7 +75,6 @@ export default function Banner() {
     };
   }, []);
 
-  // fallback slides (dipakai bila DB kosong atau error)
   function getFallbackSlides() {
     return [
       {
@@ -89,26 +83,18 @@ export default function Banner() {
         title: "Fresh Smoothie & Summer Juice",
         description:
           "Konten fallback - periksa konfigurasi Realtime DB atau rules.",
-        cta: "Shop Now",
-        ctaUrl: "#",
         image: "/images/product-thumb-1.png",
       },
       {
         id: "fallback-2",
         tagline: "20% off",
         title: "Fruits & Vegetables",
-        description: "",
-        cta: "Shop Collection",
-        ctaUrl: "#",
         image: "/images/ad-image-1.png",
       },
       {
         id: "fallback-3",
         tagline: "15% off",
         title: "Baked Products",
-        description: "",
-        cta: "Shop Collection",
-        ctaUrl: "#",
         image: "/images/ad-image-2.png",
       },
     ];
@@ -117,20 +103,16 @@ export default function Banner() {
   const slidesToRender = (
     banners && banners.length ? banners : getFallbackSlides()
   ).slice(0, 3);
-
-  // ambil block2 dari banner-4 dan block3 dari banner-5
   const fallback = getFallbackSlides();
   const block2Data =
     (banners &&
       banners.find((b) => String(b.id).toLowerCase() === "banner-4")) ||
     fallback[1];
-
   const block3Data =
     (banners &&
       banners.find((b) => String(b.id).toLowerCase() === "banner-5")) ||
     fallback[2];
 
-  // grid styles
   const bannerBlocksStyle = isLarge
     ? {
         display: "grid",
@@ -147,13 +129,27 @@ export default function Banner() {
       };
 
   const block1Style = isLarge ? { gridColumn: "1 / 2", gridRow: "1 / 3" } : {};
-
   const block2Style = isLarge ? { gridColumn: "2 / 3", gridRow: "1 / 2" } : {};
   const block3Style = isLarge ? { gridColumn: "2 / 3", gridRow: "2 / 3" } : {};
-
-  // control ukuran gambar background untuk banner-4 & banner-5
   const sideImageSize = isLarge ? "40% auto" : "cover";
   const sideImagePosition = isLarge ? "right center" : "center";
+
+  // === Hover Control ===
+  const startHoverLoop = () => {
+    if (hoverIntervalRef.current) return;
+    hoverIntervalRef.current = setInterval(() => {
+      if (swiperRef.current && swiperRef.current.slideNext) {
+        swiperRef.current.slideNext();
+      }
+    }, 2000); // setiap 2 detik geser
+  };
+
+  const stopHoverLoop = () => {
+    if (hoverIntervalRef.current) {
+      clearInterval(hoverIntervalRef.current);
+      hoverIntervalRef.current = null;
+    }
+  };
 
   return (
     <section
@@ -168,9 +164,12 @@ export default function Banner() {
         <div className="row">
           <div className="col-md-12">
             <div className="banner-blocks" style={bannerBlocksStyle}>
+              {/* === Banner Utama === */}
               <div
                 className="banner-ad large bg-info block-1"
-                style={block1Style}
+                style={{ ...block1Style, cursor: "pointer" }}
+                onMouseEnter={startHoverLoop}
+                onMouseLeave={stopHoverLoop}
               >
                 {loading ? (
                   <div className="p-5 text-center">Loading banners...</div>
@@ -189,6 +188,9 @@ export default function Banner() {
                       modules={[Pagination]}
                       pagination={{ clickable: true }}
                       className="main-swiper"
+                      loop={true}
+                      speed={600}
+                      onSwiper={(s) => (swiperRef.current = s)}
                     >
                       {slidesToRender.map((b) => (
                         <SwiperSlide key={b.id}>
@@ -202,7 +204,6 @@ export default function Banner() {
                               <h3 className="display-4">{b.title}</h3>
                               {b.description && <p>{b.description}</p>}
                             </div>
-
                             <div className="img-wrapper col-md-5 text-center">
                               <img
                                 src={b.image || "/images/placeholder.png"}
@@ -224,6 +225,7 @@ export default function Banner() {
                 <div className="swiper-pagination" />
               </div>
 
+              {/* === Banner 2 === */}
               <div
                 className="banner-ad bg-success-subtle block-2"
                 style={{
@@ -236,7 +238,6 @@ export default function Banner() {
                   backgroundSize: sideImageSize,
                 }}
               >
-                {/* show loading same as block-1 while loading */}
                 {loading ? (
                   <div className="p-5 text-center">Loading banners...</div>
                 ) : (
@@ -253,6 +254,7 @@ export default function Banner() {
                 )}
               </div>
 
+              {/* === Banner 3 === */}
               <div
                 className="banner-ad bg-danger block-3"
                 style={{
@@ -265,7 +267,6 @@ export default function Banner() {
                   backgroundSize: sideImageSize,
                 }}
               >
-                {/* show loading same as block-1 while loading */}
                 {loading ? (
                   <div className="p-5 text-center">Loading banners...</div>
                 ) : (

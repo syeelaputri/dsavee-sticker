@@ -173,6 +173,9 @@ const Navbar = () => {
             className="nav-link"
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
           >
             Home
           </Link>
@@ -228,7 +231,10 @@ const Navbar = () => {
               to="/"
               style={styles.mobileNavLink}
               className="mobile-nav-link"
-              onClick={toggleMenu}
+              onClick={() => {
+                toggleMenu();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
             >
