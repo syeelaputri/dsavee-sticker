@@ -13,7 +13,6 @@ import AboutUs from "./pages/aboutUs";
 import Login from "./pages/login";
 import SignUp from "./pages/signup";
 import AdminLogin from "./pages/adminLogin";
-import Logout from "./pages/logout";
 import OrderHistory from "./pages/orderHistory";
 import ProductDetail from "./pages/productDetail";
 
@@ -39,7 +38,6 @@ export default function App() {
               <Route path="/signup" element={<SignUp />} />
               <Route path="/login" element={<Login />} />
               <Route path="/admin-login" element={<AdminLogin />} />
-              <Route path="/logout" element={<Logout />} />
               <Route path="/orders" element={<OrderHistory />} />
             </Routes>
           </Suspense>

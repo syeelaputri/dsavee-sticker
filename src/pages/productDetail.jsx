@@ -362,10 +362,7 @@ export default function ProductDetail() {
           <h1 className="h2 mb-3">{product.name}</h1>
 
           {product.size && (
-            <p className="text-muted mb-3">
-              <i className="uil uil-ruler me-2"></i>
-              Size: {product.size}
-            </p>
+            <p className="text-muted mb-3">Size: {product.size}</p>
           )}
 
           <div className="stock-info mb-3">
@@ -539,10 +536,7 @@ export default function ProductDetail() {
           )}
 
           <div className="shipping-info mb-4 p-3 bg-light rounded">
-            <h6 className="mb-2">
-              <i className="uil uil-truck me-2"></i>
-              Informasi Pengiriman:
-            </h6>
+            <h6 className="mb-2">Informasi Pengiriman:</h6>
             <div className="row">
               <div className="col-6">
                 <small className="text-muted">Lokasi:</small>

@@ -1,5 +1,4 @@
-// src/pages/Profile.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { getDatabase, ref, get, set, update } from "firebase/database";
 import { useNavigate, Link } from "react-router-dom";
 import { getAuth, onAuthStateChanged, updateProfile } from "firebase/auth";
@@ -13,6 +12,8 @@ export default function Profile() {
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+
+  const prevAuthRef = useRef(null); // track previous auth state to detect logout transition
 
   const [editForm, setEditForm] = useState({
     name: "",
@@ -52,8 +53,32 @@ export default function Profile() {
   // listen auth changes dan sinkron ke Realtime Database (users/{uid})
   useEffect(() => {
     const db = getDatabase();
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      // set loading flag for initial mount
       setAuthLoading(false);
+
+      // Detect transition logged-in -> logged-out
+      // prevAuthRef.current holds the previous auth user (null or object)
+      // If previously logged in (truthy) and now currentUser is null => user logged out.
+      try {
+        if (prevAuthRef.current && !currentUser) {
+          // Only redirect to homepage if the user was previously logged in.
+          // Also make sure we only redirect if user currently is on profile page.
+          if (
+            typeof window !== "undefined" &&
+            window.location.pathname === "/profile"
+          ) {
+            navigate("/");
+          }
+        }
+      } catch (err) {
+        // ignore navigation errors
+        console.warn("Error checking logout transition:", err);
+      }
+
+      // update prev ref for next callback
+      prevAuthRef.current = currentUser;
 
       if (currentUser) {
         setUser(currentUser);
@@ -111,19 +136,6 @@ export default function Profile() {
 
   const handleLogin = () => navigate("/login");
   const handleSignup = () => navigate("/signup");
-
-  // logout -> signOut sehingga CartContext akan detect user=null dan load guest cart dari localStorage
-  const handleLogout = async () => {
-    try {
-      await auth.signOut();
-      // setelah signout, CartContext listener akan load guest cart
-      setUser(null);
-      navigate("/login");
-    } catch (err) {
-      console.error("Logout error:", err);
-      alert("Gagal logout. Coba lagi.");
-    }
-  };
 
   const handleEditToggle = () => {
     if (!user) {
@@ -198,11 +210,7 @@ export default function Profile() {
           </p>
         </div>
         <div>
-          {user ? (
-            <button className="btn btn-danger" onClick={handleLogout}>
-              Logout
-            </button>
-          ) : (
+          {user ? null : (
             <>
               <button className="btn btn-primary me-2" onClick={handleLogin}>
                 Login

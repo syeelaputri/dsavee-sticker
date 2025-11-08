@@ -151,7 +151,7 @@ export default function AboutUs() {
         <h3>Lokasi & Jangkauan Layanan</h3>
         <p className="text-muted">
           Kantor pusat kami berada di: <strong>Manado, Indonesia</strong>. Saat
-          ini kami melayani pengiriman di wilayah airmadidi saja.
+          ini kami melayani pengiriman di wilayah Airmadidi saja.
         </p>
 
         <div className="row mt-3">

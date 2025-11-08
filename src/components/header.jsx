@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import OffcanvasCart from "./offCanvasCart";
 import { useAuth } from "../contexts/AuthContext";
@@ -10,6 +10,49 @@ export default function Header() {
   const { getCartItemsCount } = useCart();
   const cartCount =
     typeof getCartItemsCount === "function" ? getCartItemsCount() : 0;
+
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  // Manage body class & cleanup when modal shown/hidden
+  useEffect(() => {
+    if (showConfirm) {
+      // prevent background scroll like Bootstrap modal
+      document.body.classList.add("modal-open");
+    } else {
+      document.body.classList.remove("modal-open");
+    }
+
+    // cleanup on unmount
+    return () => {
+      document.body.classList.remove("modal-open");
+    };
+  }, [showConfirm]);
+
+  const openConfirm = (e) => {
+    e?.preventDefault?.();
+    setShowConfirm(true);
+  };
+
+  const closeConfirm = (e) => {
+    e?.preventDefault?.();
+    setShowConfirm(false);
+  };
+
+  const handleConfirmLogout = async (e) => {
+    e?.preventDefault?.();
+    try {
+      setLoggingOut(true);
+      // call provided logout algorithm from context (do NOT change its logic)
+      await logout();
+    } catch (err) {
+      console.error("Logout failed:", err);
+      // still close modal so user can continue; optionally show error
+    } finally {
+      setLoggingOut(false);
+      setShowConfirm(false);
+    }
+  };
 
   return (
     <>
@@ -43,6 +86,10 @@ export default function Header() {
                     data-bs-toggle="offcanvas"
                     data-bs-target="#offcanvasCart"
                     aria-controls="offcanvasCart"
+                    onClick={(e) => {
+                      // prevent page jump from href="#"
+                      e.preventDefault();
+                    }}
                   >
                     <FiShoppingCart size={24} />
                     {cartCount > 0 && (
@@ -74,11 +121,13 @@ export default function Header() {
                           {user.email}
                         </div>
                       </Link>
+
+                      {/* Logout triggers confirmation modal */}
                       <button
                         className="btn text-white fw-semibold"
-                        onClick={logout}
+                        onClick={openConfirm}
                         style={{
-                          backgroundColor: "orange", // background tombol logout
+                          backgroundColor: "orange",
                           borderRadius: 8,
                           padding: "6px 12px",
                         }}
@@ -113,6 +162,57 @@ export default function Header() {
 
       {/* Offcanvas Components */}
       <OffcanvasCart />
+
+      {/* Confirmation Modal (simple Bootstrap-like markup) */}
+      {showConfirm && (
+        <>
+          {/* Backdrop */}
+          <div className="modal-backdrop fade show"></div>
+
+          <div
+            className="modal fade show"
+            tabIndex="-1"
+            role="dialog"
+            aria-modal="true"
+            style={{ display: "block" }}
+          >
+            <div className="modal-dialog modal-dialog-centered" role="document">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">Confirm Logout</h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    aria-label="Close"
+                    onClick={closeConfirm}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <p>Are you sure you want to logout?</p>
+                </div>
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={closeConfirm}
+                    disabled={loggingOut}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={handleConfirmLogout}
+                    disabled={loggingOut}
+                  >
+                    {loggingOut ? "Logging out..." : "Logout"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

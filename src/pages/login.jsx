@@ -1,3 +1,4 @@
+// src/pages/Login.jsx
 import React, { useState } from "react";
 import { auth, rtdb } from "../firebase";
 import {
@@ -53,8 +54,8 @@ const Login = () => {
         );
         return;
       }
-      // IMPORTANT: tidak melakukan merge guest -> server di Login
-      navigate("/products");
+      // arahkan ke homepage setelah login sukses
+      navigate("/", { replace: true });
     } catch (err) {
       console.error("Email login error:", err);
       switch (err.code) {
@@ -97,7 +98,8 @@ const Login = () => {
       } else {
         await update(userRef, { updatedAt: new Date().toISOString() });
       }
-      navigate("/products");
+      // arahkan ke homepage
+      navigate("/", { replace: true });
     } catch (err) {
       console.error("Google sign-in error:", err);
       if (err.code === "auth/popup-closed-by-user")

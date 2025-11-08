@@ -164,7 +164,7 @@ export default function Checkout() {
     (s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 1),
     0
   );
-  const shippingCost = 0;
+  const shippingCost = 10000;
   const total = subtotal + shippingCost;
 
   // Draft id (opsional)

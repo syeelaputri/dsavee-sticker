@@ -1,3 +1,4 @@
+// src/pages/SignUp.jsx
 import React, { useState } from "react";
 import { auth, rtdb } from "../firebase";
 import {
@@ -7,7 +8,7 @@ import {
   updateProfile,
   signOut,
 } from "firebase/auth";
-import { ref, set, get } from "firebase/database";
+import { ref, set, get, update } from "firebase/database";
 import { Link, useNavigate } from "react-router-dom";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import "../css/style.css";
@@ -100,7 +101,7 @@ const SignUp = () => {
       try {
         await updateProfile(u, { displayName: defaultName });
       } catch (e) {
-        /* ignore */
+        // ignore profile update errors
       }
 
       const payload = makeProfilePayload(u, { name: defaultName });
@@ -129,13 +130,39 @@ const SignUp = () => {
         // merge gagal tidak menghalangi signup - tetap lanjut
       }
 
-      navigate("/profile");
+      // arahkan ke homepage setelah berhasil signup
+      navigate("/", { replace: true });
     } catch (err) {
       console.error("Sign up error:", err);
+      // pastikan logout jika ada partial auth
       try {
         await signOut(auth);
       } catch (_) {}
-      setError(err?.message || "Gagal sign up. Coba lagi.");
+      // lebih spesifikkan pesan error bila memungkinkan
+      if (err && err.code) {
+        switch (err.code) {
+          case "auth/email-already-in-use":
+            setError(
+              "Email sudah digunakan. Silakan login atau gunakan email lain."
+            );
+            break;
+          case "auth/invalid-email":
+            setError("Format email tidak valid.");
+            break;
+          case "auth/weak-password":
+            setError(
+              "Password terlalu lemah. Gunakan kombinasi huruf & angka minimal 8 karakter."
+            );
+            break;
+          case "auth/operation-not-allowed":
+            setError("Pendaftaran tidak diizinkan. Hubungi admin.");
+            break;
+          default:
+            setError(err?.message || "Gagal sign up. Coba lagi.");
+        }
+      } else {
+        setError(err?.message || "Gagal sign up. Coba lagi.");
+      }
     } finally {
       setProcessing(false);
     }
@@ -165,15 +192,38 @@ const SignUp = () => {
         }
       } else {
         // existing user: update timestamp only (no merge)
-        await set(userRef, {
-          ...snap.val(),
-          updatedAt: new Date().toISOString(),
-        });
+        try {
+          await update(userRef, { updatedAt: new Date().toISOString() });
+        } catch (e) {
+          // fallback: set whole object with updatedAt (very unlikely)
+          await set(userRef, {
+            ...(snap.val() || {}),
+            updatedAt: new Date().toISOString(),
+          });
+        }
       }
-      navigate("/profile");
+      // arahkan ke homepage
+      navigate("/", { replace: true });
     } catch (err) {
       console.error("Google signup error:", err);
-      setError(err?.message || "Gagal login dengan Google.");
+      // mapping error codes
+      if (err && err.code) {
+        if (err.code === "auth/popup-closed-by-user")
+          setError("Popup ditutup. Coba lagi.");
+        else if (err.code === "auth/cancelled-popup-request")
+          setError("Permintaan popup dibatalkan.");
+        else if (err.code === "auth/account-exists-with-different-credential")
+          setError("Akun sudah ada dengan metode sign-in lain.");
+        else if (err.code === "auth/popup-blocked")
+          setError("Popup diblokir oleh browser.");
+        else setError(err?.message || "Gagal login dengan Google. Coba lagi.");
+      } else {
+        setError(err?.message || "Gagal login dengan Google. Coba lagi.");
+      }
+      // pastikan sign out jika state auth tidak bersih
+      try {
+        await signOut(auth);
+      } catch (_) {}
     } finally {
       setProcessing(false);
     }
