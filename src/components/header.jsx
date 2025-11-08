@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import OffcanvasCart from "./offCanvasCart";
 import { useAuth } from "../contexts/AuthContext";
 import { useCart } from "../contexts/CartContext";
@@ -13,6 +13,9 @@ export default function Header() {
 
   const [showConfirm, setShowConfirm] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Manage body class & cleanup when modal shown/hidden
   useEffect(() => {
@@ -45,6 +48,16 @@ export default function Header() {
       setLoggingOut(true);
       // call provided logout algorithm from context (do NOT change its logic)
       await logout();
+
+      // Jika saat ini user berada di halaman checkout, arahkan ke homepage
+      // (juga menangani route seperti /checkout/step atau query)
+      if (
+        location &&
+        location.pathname &&
+        location.pathname.startsWith("/checkout")
+      ) {
+        navigate("/", { replace: true });
+      }
     } catch (err) {
       console.error("Logout failed:", err);
       // still close modal so user can continue; optionally show error

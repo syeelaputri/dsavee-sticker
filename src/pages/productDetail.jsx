@@ -32,20 +32,22 @@ export default function ProductDetail() {
       (snapshot) => {
         if (snapshot.exists()) {
           const productData = snapshot.val();
+          // set product (ambil nilai stok default dari DB jika ada)
           setProduct({
             id: productId,
-            stock: 50,
             ...productData,
           });
 
-          // setup variant/color default
+          // setup variant default
           if (productData.variants && productData.variants.length > 0) {
             setSelectedVariant(productData.variants[0]);
           } else if (productData.color) {
             setSelectedVariant(productData.color);
+          } else {
+            setSelectedVariant(null);
           }
 
-          // Build availableColors dari DB (colorOptions)
+          // Build availableColors dari DB (colorOptions) atau dari image fields
           if (
             Array.isArray(productData.colorOptions) &&
             productData.colorOptions.length > 0
@@ -80,7 +82,7 @@ export default function ProductDetail() {
                   (namesArr && namesArr[idx]) ||
                   (idx === 0 ? "Varian 1" : `Varian ${idx + 1}`),
                 value: null,
-                code: key,
+                code: key, // mis. image, image1, image2
                 image: productData[key] || null,
                 imageField: key,
               }));
@@ -131,7 +133,6 @@ export default function ProductDetail() {
     if (typeof value === "string") {
       return value.replace(/\s+/g, "-").replace(/[^\w-.:]/g, "");
     }
-    // object (e.g. color object) -> try code or name or value
     if (typeof value === "object") {
       return (
         (value.code && String(value.code)) ||
@@ -155,12 +156,83 @@ export default function ProductDetail() {
     return `${prodId}::v=${v}::c=${c}`;
   }
 
+  // Helper: map imageField -> stock field name
+  function imageFieldToStockField(imageField) {
+    if (!imageField) return "stock";
+    const key = String(imageField || "").toLowerCase();
+    if (key === "image" || key === "image0") return "stock";
+    if (key === "image1") return "stock1";
+    if (key === "image2") return "stock2";
+    // if image field contains '1' or '2' at end, try to detect
+    if (key.endsWith("1")) return "stock1";
+    if (key.endsWith("2")) return "stock2";
+    return "stock";
+  }
+
+  // New: get stock value for selected variant/color
+  function getVariantStock(prod, color, variant) {
+    try {
+      if (!prod) return 0;
+      // 1) if color has imageField -> map directly
+      if (color && color.imageField) {
+        const stockField = imageFieldToStockField(color.imageField);
+        const val = prod[stockField];
+        return Number(val ?? 0);
+      }
+
+      // 2) if color has image -> match against image/image1/image2
+      if (color && color.image) {
+        if (prod.image && prod.image === color.image)
+          return Number(prod.stock ?? 0);
+        if (prod.image1 && prod.image1 === color.image)
+          return Number(prod.stock1 ?? 0);
+        if (prod.image2 && prod.image2 === color.image)
+          return Number(prod.stock2 ?? 0);
+      }
+
+      // 3) if variant index-like (e.g. variant === 0/1/2) -> map by index
+      if (variant !== null && variant !== undefined) {
+        const maybeIdx = Number(variant);
+        if (!Number.isNaN(maybeIdx)) {
+          if (maybeIdx === 0) return Number(prod.stock ?? 0);
+          if (maybeIdx === 1) return Number(prod.stock1 ?? 0);
+          if (maybeIdx === 2) return Number(prod.stock2 ?? 0);
+        }
+        // sometimes variant is a string like 'Varian 2' -> try to detect digit
+        const m = String(variant).match(/\d+/);
+        if (m) {
+          const idx = Number(m[0]) - 1; // human number -> index
+          if (idx === 0) return Number(prod.stock ?? 0);
+          if (idx === 1) return Number(prod.stock1 ?? 0);
+          if (idx === 2) return Number(prod.stock2 ?? 0);
+        }
+      }
+
+      // 4) fallback: prefer stock, else stock1, else stock2
+      if (prod.hasOwnProperty("stock")) return Number(prod.stock ?? 0);
+      if (prod.hasOwnProperty("stock1")) return Number(prod.stock1 ?? 0);
+      if (prod.hasOwnProperty("stock2")) return Number(prod.stock2 ?? 0);
+      return 0;
+    } catch (e) {
+      console.error("getVariantStock error:", e);
+      return 0;
+    }
+  }
+
   // handler add to cart (gunakan addToCart dari context)
   async function addToCartHandler() {
     if (!product) return;
-    const currentStock = product?.stock ?? 50;
-    if (currentStock < qty) {
-      alert(`Maaf, stok tidak mencukupi. Stok tersedia: ${currentStock}`);
+
+    const currentVariantStock = getVariantStock(
+      product,
+      selectedColor,
+      selectedVariant
+    );
+
+    if (currentVariantStock < qty) {
+      alert(
+        `Maaf, stok tidak mencukupi untuk varian ini. Stok tersedia: ${currentVariantStock}`
+      );
       return;
     }
 
@@ -196,13 +268,28 @@ export default function ProductDetail() {
   // gunakan helper yang konsisten
   const selectedImage = selectedImageForProduct(product, selectedColor);
 
+  // compute current stock for selected variant
+  const currentVariantStock = getVariantStock(
+    product,
+    selectedColor,
+    selectedVariant
+  );
+
+  // ensure qty does not exceed stock when product or variant changes
+  useEffect(() => {
+    if (qty > currentVariantStock) {
+      setQty(currentVariantStock > 0 ? currentVariantStock : 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentVariantStock, productId, selectedColor, selectedVariant]);
+
+  // (optional) function to update product.stock (ke root stock) - keep but do not use for variant updates
   const updateStock = async (productIdArg, quantity) => {
     const db = getDatabase();
     const productRef = ref(db, `products/${productIdArg}`);
 
     try {
-      // gunakan nullish coalescing agar 0 tetap 0
-      const currentStock = product?.stock ?? 50;
+      const currentStock = Number(product?.stock ?? 0);
       const newStock = Math.max(0, currentStock - quantity);
 
       await update(productRef, {
@@ -217,6 +304,7 @@ export default function ProductDetail() {
   };
 
   function getProductDescription(prod) {
+    if (!prod) return "";
     if (prod.description) {
       return prod.description;
     }
@@ -332,7 +420,7 @@ export default function ProductDetail() {
     typeof rawPrice === "number" ? rawPrice : parseFloat(rawPrice);
   const safePrice = Number.isFinite(priceNum) ? priceNum : 0;
   const totalPrice = safePrice * qty + shippingCost;
-  const currentStock = product.stock ?? 50;
+  const currentStock = currentVariantStock; // stok sesuai varian yang dipilih
 
   const btnProps = getButtonPropsFromColor(selectedColor);
 
@@ -375,13 +463,17 @@ export default function ProductDetail() {
                   : "bg-danger";
               const textClass =
                 bgClass === "bg-warning" ? "text-dark" : "text-white";
+              // juga tampilkan keterangan varian jika ada
+              const variantLabel =
+                selectedColor?.name ||
+                (selectedVariant ? String(selectedVariant) : "Default");
               return (
                 <span
                   className={`badge ${bgClass} ${textClass}`}
                   style={{ opacity: 1 }}
                 >
                   <i className="uil uil-package me-1"></i>
-                  Stok: {currentStock} pcs
+                  Stok ({variantLabel}): {currentStock} pcs
                 </span>
               );
             })()}
@@ -421,6 +513,7 @@ export default function ProductDetail() {
               </small>
             )}
           </div>
+
           <div className="price my-4">
             <h3 className="text-primary">Rp{safePrice.toFixed(2)}</h3>
           </div>
@@ -581,7 +674,9 @@ export default function ProductDetail() {
             <i className="uil uil-shopping-cart me-2"></i>
             {currentStock === 0
               ? "Stok Habis"
-              : `Add to Cart (${selectedColor?.name})`}
+              : `Add to Cart (${
+                  selectedColor?.name || selectedVariant || "Default"
+                })`}
           </button>
 
           <div className="mt-4 pt-3 border-top">
@@ -605,7 +700,9 @@ export default function ProductDetail() {
                   className="uil uil-package text-primary mb-2"
                   style={{ fontSize: "1.5rem" }}
                 ></i>
-                <p className="small mb-0 fw-bold">Stock: {currentStock}</p>{" "}
+                <p className="small mb-0 fw-bold">
+                  Stock (varian): {currentStock}
+                </p>
               </div>
             </div>
           </div>
