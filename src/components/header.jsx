@@ -1,9 +1,18 @@
+// src/components/header.jsx
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import OffcanvasCart from "./offCanvasCart";
 import { useAuth } from "../contexts/AuthContext";
 import { useCart } from "../contexts/CartContext";
 import { FiShoppingCart } from "react-icons/fi";
+
+/**
+ * NOTE:
+ * - Admin email hardcoded sesuai permintaan: dsaveesticker@gmail.com
+ * - Jika Anda ingin memindahkan konfigurasi admin ke tempat lain,
+ *   ganti pengecekan isAdmin dengan import dari config/shared constant.
+ */
+const ADMIN_EMAIL = "dsaveesticker@gmail.com";
 
 export default function Header() {
   const { user, logout } = useAuth();
@@ -17,16 +26,20 @@ export default function Header() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Determine admin by email (case-insensitive)
+  const isAdmin =
+    !!user &&
+    !!user.email &&
+    user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
   // Manage body class & cleanup when modal shown/hidden
   useEffect(() => {
     if (showConfirm) {
-      // prevent background scroll like Bootstrap modal
       document.body.classList.add("modal-open");
     } else {
       document.body.classList.remove("modal-open");
     }
 
-    // cleanup on unmount
     return () => {
       document.body.classList.remove("modal-open");
     };
@@ -42,46 +55,29 @@ export default function Header() {
     setShowConfirm(false);
   };
 
-  /**
-   * handleConfirmLogout
-   * - panggil logout() dari AuthContext (tidak mengubah logika logout)
-   * - jika logout sukses dan user sedang di halaman checkout OR
-   *   halaman order history (atau route yang berhubungan dengan order),
-   *   arahkan ke homepage sebagai guest
-   */
   const handleConfirmLogout = async (e) => {
     e?.preventDefault?.();
     try {
       setLoggingOut(true);
-      // call provided logout algorithm from context (do NOT change its logic)
       await logout();
 
-      // Determine whether current path is one that should redirect to home after logout
-      // We test several common order-related route patterns to be safe.
       const pathname = (location && location.pathname) || "";
       const normalized = pathname.toLowerCase();
 
       const shouldRedirectToHome =
         normalized.startsWith("/checkout") ||
-        normalized.startsWith("/order") || // covers /order, /orders, /order/..., /orderHistory if path includes 'order'
+        normalized.startsWith("/order") ||
         normalized.startsWith("/orders") ||
         normalized.startsWith("/order-history") ||
         normalized.startsWith("/orderhistory") ||
-        normalized.startsWith("/order-history".toLowerCase()) ||
         normalized === "/orderhistory" ||
         normalized === "/orderhistory/";
 
       if (shouldRedirectToHome) {
-        // replace so user can't press back into protected page
         navigate("/", { replace: true });
-      } else {
-        // optional: if current page is profile or any protected page you want to force home on logout,
-        // add more conditions above.
-        // We intentionally do nothing otherwise: staying on current page may redirect by route guards.
       }
     } catch (err) {
       console.error("Logout failed:", err);
-      // still close modal so user can continue; optionally show error
     } finally {
       setLoggingOut(false);
       setShowConfirm(false);
@@ -112,51 +108,45 @@ export default function Header() {
             {/* User actions */}
             <div className="col-sm-8 col-lg-4 d-flex justify-content-end gap-3 align-items-center mt-4 mt-sm-0 justify-content-center justify-content-sm-end">
               <ul className="d-flex justify-content-end list-unstyled m-0 align-items-center">
-                {/* Cart Button */}
-                <li className="me-2">
-                  <a
-                    href="#"
-                    className="rounded-circle bg-light p-2 mx-1 position-relative"
-                    data-bs-toggle="offcanvas"
-                    data-bs-target="#offcanvasCart"
-                    aria-controls="offcanvasCart"
-                    onClick={(e) => {
-                      // prevent page jump from href="#"
-                      e.preventDefault();
-                    }}
-                  >
-                    <FiShoppingCart size={24} />
-                    {cartCount > 0 && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: -6,
-                          right: -6,
-                          background: "#dc3545",
-                          color: "#fff",
-                          borderRadius: 999,
-                          padding: "2px 6px",
-                          fontSize: 12,
-                        }}
-                      >
-                        {cartCount}
-                      </span>
-                    )}
-                  </a>
-                </li>
+                {/* Cart Button - HANYA untuk non-admin */}
+                {!isAdmin && (
+                  <li className="me-2">
+                    <a
+                      href="#"
+                      className="rounded-circle bg-light p-2 mx-1 position-relative"
+                      data-bs-toggle="offcanvas"
+                      data-bs-target="#offcanvasCart"
+                      aria-controls="offcanvasCart"
+                      onClick={(e) => {
+                        e.preventDefault();
+                      }}
+                    >
+                      <FiShoppingCart size={24} />
+                      {cartCount > 0 && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: -6,
+                            right: -6,
+                            background: "#dc3545",
+                            color: "#fff",
+                            borderRadius: 999,
+                            padding: "2px 6px",
+                            fontSize: 12,
+                          }}
+                        >
+                          {cartCount}
+                        </span>
+                      )}
+                    </a>
+                  </li>
+                )}
 
                 {/* User login / logout */}
                 <li>
                   {user ? (
                     <div className="d-flex align-items-center gap-2">
-                      <Link to="/profile" className="text-decoration-none">
-                        <strong>{user.displayName || user.email}</strong>
-                        <div style={{ fontSize: 12, color: "#666" }}>
-                          {user.email}
-                        </div>
-                      </Link>
-
-                      {/* Logout triggers confirmation modal */}
+                      {/* Logout triggers confirmation modal (tetap tersedia untuk admin dan non-admin) */}
                       <button
                         className="btn text-white fw-semibold"
                         onClick={openConfirm}
@@ -194,13 +184,12 @@ export default function Header() {
         </div>
       </header>
 
-      {/* Offcanvas Components */}
-      <OffcanvasCart />
+      {/* Offcanvas Cart hanya render untuk non-admin */}
+      {!isAdmin && <OffcanvasCart />}
 
-      {/* Confirmation Modal (simple Bootstrap-like markup) */}
+      {/* Confirmation Modal */}
       {showConfirm && (
         <>
-          {/* Backdrop */}
           <div className="modal-backdrop fade show"></div>
 
           <div

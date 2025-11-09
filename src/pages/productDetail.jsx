@@ -707,34 +707,6 @@ export default function ProductDetail() {
                   selectedColor?.name || selectedVariant || "Default"
                 })`}
           </button>
-
-          <div className="mt-4 pt-3 border-top">
-            <div className="row text-center">
-              <div className="col-4">
-                <i
-                  className="uil uil-truck text-primary mb-2"
-                  style={{ fontSize: "1.5rem" }}
-                ></i>
-                <p className="small mb-0">Airmadidi Only</p>
-              </div>
-              <div className="col-4">
-                <i
-                  className="uil uil-shield-check text-primary mb-2"
-                  style={{ fontSize: "1.5rem" }}
-                ></i>
-                <p className="small mb-0">Quality Guarantee</p>
-              </div>
-              <div className="col-4">
-                <i
-                  className="uil uil-package text-primary mb-2"
-                  style={{ fontSize: "1.5rem" }}
-                ></i>
-                <p className="small mb-0 fw-bold">
-                  Stock (varian): {currentStock}
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -9,14 +9,12 @@ import Home from "./pages/home";
 import CartPage from "./pages/cartPage";
 import Checkout from "./pages/checkout";
 import Profile from "./pages/profile";
+import AdminDashboard from "./pages/dashboardAdmin";
 import AboutUs from "./pages/aboutUs";
 import Login from "./pages/login";
 import SignUp from "./pages/signup";
-import AdminLogin from "./pages/adminLogin";
 import OrderHistory from "./pages/orderHistory";
 import ProductDetail from "./pages/productDetail";
-
-const AdminDashboard = lazy(() => import("./pages/dashboardAdmin"));
 
 export default function App() {
   return (
@@ -37,7 +35,6 @@ export default function App() {
               <Route path="/aboutUs" element={<AboutUs />} />
               <Route path="/signup" element={<SignUp />} />
               <Route path="/login" element={<Login />} />
-              <Route path="/admin-login" element={<AdminLogin />} />
               <Route path="/orders" element={<OrderHistory />} />
             </Routes>
           </Suspense>
