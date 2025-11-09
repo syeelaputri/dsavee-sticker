@@ -6,7 +6,6 @@ import { AuthProvider } from "./contexts/AuthContext";
 import Header from "./components/header";
 import Footer from "./components/footer";
 import Home from "./pages/home";
-import CartPage from "./pages/cartPage";
 import Checkout from "./pages/checkout";
 import Profile from "./pages/profile";
 import AdminDashboard from "./pages/dashboardAdmin";
@@ -28,7 +27,6 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/product/:productId" element={<ProductDetail />} />
-              <Route path="/cart" element={<CartPage />} />
               <Route path="/checkout" element={<Checkout />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/dashboardAdmin" element={<AdminDashboard />} />

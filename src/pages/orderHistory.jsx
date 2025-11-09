@@ -726,11 +726,11 @@ const OrderHistory = () => {
 
   // ---------- TRACKING / TIMELINE helpers ----------
   const TRACKING_STAGES = [
-    { key: "received", label: "Pesanan Diterima" },
-    { key: "processed", label: "Diproses oleh Penjual" },
-    { key: "to_courier", label: "Dikirim ke Kurir" },
-    { key: "in_transit", label: "Dalam Pengiriman" },
-    { key: "delivered", label: "Diterima oleh Pembeli" },
+    { key: "received" },
+    { key: "processed" },
+    { key: "to_courier" },
+    { key: "in_transit" },
+    { key: "delivered" },
   ];
 
   const statusToProgressIndex = (status) => {

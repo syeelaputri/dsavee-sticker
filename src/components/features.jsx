@@ -3,7 +3,7 @@ import React from "react";
 const features = [
   {
     title: "Free delivery",
-    text: "Gratis ongkir untuk semua pesanan di atas Rp50.000 di wilayah Airmadidi!",
+    text: "Gratis ongkir untuk semua pesanan di atas Rp100.000 di wilayah Airmadidi!",
     icon: (
       <svg
         xmlns="http://www.w3.org/2000/svg"

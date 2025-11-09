@@ -1,5 +1,6 @@
-// src/pages/checkout.jsx
+// checkout.jsx
 import React, { useState, useEffect, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 // Realtime Database (backend logic)
 import {
@@ -11,6 +12,7 @@ import {
   serverTimestamp,
   onValue,
   get,
+  runTransaction,
 } from "firebase/database";
 
 // Auth
@@ -22,7 +24,6 @@ import "jspdf";
 
 // Cart context (sesuaikan path jika berbeda)
 import { useCartState, useCartDispatch } from "../contexts/index";
-// also import useCart (the hook used by OffcanvasCart) to call removeFromCart if available
 import { useCart } from "../contexts/CartContext";
 
 const colors = {
@@ -38,11 +39,16 @@ const colors = {
 // same guest key used elsewhere
 const GUEST_KEY = "guest_cart_v1";
 
+// free shipping threshold (Rp)
+const FREE_SHIPPING_THRESHOLD = 100000;
+const DEFAULT_SHIPPING_COST = 10000;
+
 export default function Checkout() {
+  const navigate = useNavigate();
+
   // form fields
   const [customerName, setCustomerName] = useState("");
   const [address, setAddress] = useState("");
-  // phone hanya angka
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
 
@@ -60,8 +66,6 @@ export default function Checkout() {
   const { items: ctxItems = [] } = useCartState();
   const dispatch = useCartDispatch();
 
-  // useCart provides imperative functions used by OffcanvasCart
-  // we'll use removeFromCart as a fallback to forcibly remove items
   const {
     cart: hookCart = [],
     removeFromCart, // may be undefined in some implementations
@@ -92,13 +96,87 @@ export default function Checkout() {
     return [];
   };
 
+  // transfer guest cart (localStorage) to user's RTDB cart (merge) on login
+  const transferGuestCartToUser = async (uid) => {
+    try {
+      if (!uid) return;
+      const raw = localStorage.getItem(GUEST_KEY);
+      if (!raw) return;
+      let guestArr = [];
+      try {
+        guestArr = JSON.parse(raw) || [];
+        if (!Array.isArray(guestArr)) guestArr = [];
+      } catch {
+        guestArr = [];
+      }
+      if (!guestArr || guestArr.length === 0) return;
+
+      const db = getDatabase();
+      const userCartRef = dbRef(db, `users/${uid}/cart`);
+      const snap = await get(userCartRef);
+      let existing = snapshotToArray(snap.exists() ? snap.val() : null);
+
+      // merge by key: id + variant + size + color (best-effort)
+      const keyFor = (it) =>
+        `${it.id || it.productId || ""}::${String(it.variant || "")}::${String(
+          it.size || ""
+        )}::${String(it.color || "")}`;
+
+      const map = new Map();
+      existing.forEach((it) => {
+        const k = keyFor(it);
+        map.set(k, { ...it });
+      });
+      guestArr.forEach((it) => {
+        const normalized = {
+          id: it.id ?? it.productId ?? it._cid ?? it.id,
+          productId: it.productId ?? it.id ?? undefined,
+          name: it.name ?? it.title ?? "Produk",
+          price: Number(it.price) || 0,
+          qty: Number(it.qty ?? it.quantity ?? 1) || 1,
+          size: it.size ?? it.sizeName ?? "",
+          variant: it.variant ?? it.selectedVariant ?? null,
+          color: it.color ?? it.selectedColor ?? null,
+          image: it.image ?? null,
+          // keep original raw if present
+          ...it,
+        };
+        const k = keyFor(normalized);
+        if (map.has(k)) {
+          const ex = map.get(k);
+          ex.qty = Number(ex.qty || 0) + Number(normalized.qty || 0);
+          map.set(k, ex);
+        } else {
+          map.set(k, normalized);
+        }
+      });
+
+      const merged = Array.from(map.values());
+
+      // write merged array to user's cart (best-effort)
+      await set(userCartRef, merged);
+
+      // clear guest cart localStorage
+      localStorage.removeItem(GUEST_KEY);
+    } catch (err) {
+      console.warn("transferGuestCartToUser failed:", err);
+    }
+  };
+
   useEffect(() => {
     const auth = getAuth();
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
       setAuthUser(u || null);
       setRemoteCartItems(null);
 
+      // If user just signed in, transfer guest cart first, then attach listener
       if (u && u.uid) {
+        try {
+          await transferGuestCartToUser(u.uid);
+        } catch (e) {
+          console.warn("transfer error (ignored):", e);
+        }
+
         try {
           const db = getDatabase();
           const cartRef = dbRef(db, `users/${u.uid}/cart`);
@@ -138,6 +216,7 @@ export default function Checkout() {
           setRemoteCartItems([]); // fail-safe
         }
       } else {
+        // not logged in (guest)
         setRemoteCartItems(null);
       }
     });
@@ -150,10 +229,27 @@ export default function Checkout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // choose source items: remote when loaded, otherwise context items
-  const sourceItems = remoteCartItems !== null ? remoteCartItems : ctxItems;
+  // choose source items: remote when loaded, otherwise context items or guest localStorage
+  const guestItemsFromStorage = (() => {
+    try {
+      const raw = localStorage.getItem(GUEST_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
+    } catch {
+      return [];
+    }
+  })();
 
-  // normalize items
+  const sourceItems =
+    remoteCartItems !== null
+      ? remoteCartItems
+      : ctxItems && ctxItems.length
+      ? ctxItems
+      : guestItemsFromStorage;
+
+  // normalize items (tambahkan variant/color jika ada supaya bisa deteksi stok varian)
   const normalizedItems = (sourceItems || []).map((it, idx) => ({
     _cid: it._cid ?? undefined,
     id: it.id ?? it.productId ?? `i-${idx}`,
@@ -163,13 +259,21 @@ export default function Checkout() {
     qty: Number(it.qty) || Number(it.quantity) || 1,
     size: it.size ?? it.sizeName ?? "",
     image: it.image ?? null,
+    // try to keep variant info if present (some cart implementations save variant/color)
+    variant: it.variant ?? it.selectedVariant ?? null,
+    color: it.color ?? it.selectedColor ?? null,
+    imageField: it.imageField ?? null,
   }));
 
   const subtotal = normalizedItems.reduce(
     (s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 1),
     0
   );
-  const shippingCost = 10000;
+
+  // shipping cost logic: free if subtotal (sticker-only total) > threshold
+  const shippingCost =
+    subtotal > FREE_SHIPPING_THRESHOLD ? 0 : DEFAULT_SHIPPING_COST;
+
   const total = subtotal + shippingCost;
 
   // draft id logic
@@ -180,7 +284,9 @@ export default function Checkout() {
       draftId = `guest-${Date.now().toString(36)}-${Math.random()
         .toString(36)
         .slice(2, 6)}`;
-      localStorage.setItem("dsavee_orderDraftId", draftId);
+      try {
+        localStorage.setItem("dsavee_orderDraftId", draftId);
+      } catch {}
     }
     draftIdRef.current = draftId;
   }, []);
@@ -220,7 +326,142 @@ export default function Checkout() {
     }
   };
 
-  // pdf generator (same as before) - omitted here for brevity in explanation (kept in code)
+  // -----------------------
+  // Stock-detection & update helpers
+  // -----------------------
+
+  function imageFieldToStockField(imageField) {
+    if (!imageField) return "stock";
+    const key = String(imageField || "").toLowerCase();
+    if (key === "image" || key === "image0") return "stock";
+    if (key === "image1") return "stock1";
+    if (key === "image2") return "stock2";
+    if (key.endsWith("1")) return "stock1";
+    if (key.endsWith("2")) return "stock2";
+    return "stock";
+  }
+
+  function detectStockFieldFromItem(productData = {}, item = {}) {
+    try {
+      if (!productData) return "stock";
+
+      if (
+        item.color &&
+        typeof item.color === "object" &&
+        item.color.imageField
+      ) {
+        return imageFieldToStockField(item.color.imageField);
+      }
+      if (item.imageField) {
+        return imageFieldToStockField(item.imageField);
+      }
+
+      if (item.color && typeof item.color === "object" && item.color.image) {
+        if (productData.image && productData.image === item.color.image)
+          return "stock";
+        if (productData.image1 && productData.image1 === item.color.image)
+          return "stock1";
+        if (productData.image2 && productData.image2 === item.color.image)
+          return "stock2";
+      }
+
+      if (item.image) {
+        if (productData.image && productData.image === item.image)
+          return "stock";
+        if (productData.image1 && productData.image1 === item.image)
+          return "stock1";
+        if (productData.image2 && productData.image2 === item.image)
+          return "stock2";
+      }
+
+      if (item.variant !== null && item.variant !== undefined) {
+        const maybeIdx = Number(item.variant);
+        if (!Number.isNaN(maybeIdx)) {
+          if (maybeIdx === 0) return "stock";
+          if (maybeIdx === 1) return "stock1";
+          if (maybeIdx === 2) return "stock2";
+        }
+        const m = String(item.variant).match(/\d+/);
+        if (m) {
+          const idx = Number(m[0]) - 1;
+          if (idx === 0) return "stock";
+          if (idx === 1) return "stock1";
+          if (idx === 2) return "stock2";
+        }
+      }
+
+      if (productData.hasOwnProperty("stock")) return "stock";
+      if (productData.hasOwnProperty("stock1")) return "stock1";
+      if (productData.hasOwnProperty("stock2")) return "stock2";
+      return "stock";
+    } catch (e) {
+      console.error("detectStockFieldFromItem error:", e);
+      return "stock";
+    }
+  }
+
+  const decrementStockForItems = async (items = []) => {
+    if (!items || items.length === 0) return;
+    const db = getDatabase();
+
+    for (const it of items) {
+      const productId = it.productId || it.id;
+      const qty = Number(it.qty || 0);
+      if (!productId) continue;
+      if (!qty || qty <= 0) continue;
+
+      const productRef = dbRef(db, `products/${productId}`);
+      let productData = null;
+
+      try {
+        const snap = await get(productRef);
+        productData = snap.exists() ? snap.val() : null;
+
+        const stockField =
+          detectStockFieldFromItem(productData || {}, it) || "stock";
+
+        await runTransaction(productRef, (current) => {
+          if (current === null) return current;
+          const cur = { ...current };
+
+          if (cur[stockField] === undefined || cur[stockField] === null) {
+            cur[stockField] = Number(cur[stockField] ?? 0);
+          }
+
+          const currentStock = Number(cur[stockField] || 0);
+          const newStock = Math.max(0, currentStock - qty);
+          cur[stockField] = newStock;
+
+          return cur;
+        });
+      } catch (err) {
+        console.warn(
+          `Gagal transact mengurangi stok produk ${productId} (${it.name}):`,
+          err
+        );
+        try {
+          const fallbackField = detectStockFieldFromItem(productData || {}, it);
+          const fallbackRef = dbRef(
+            db,
+            `products/${productId}/${fallbackField}`
+          );
+          await runTransaction(fallbackRef, (curVal) => {
+            const curNum = Number(curVal || 0);
+            return Math.max(0, curNum - qty);
+          });
+        } catch (err2) {
+          console.error(
+            `Fallback decrement stok failed untuk produk ${productId}:`,
+            err2
+          );
+        }
+      }
+    }
+  };
+
+  // -----------------------
+  // pdf generator
+  // -----------------------
   const generateReceiptPDF = (order) => {
     try {
       if (!order) {
@@ -333,9 +574,6 @@ export default function Checkout() {
     }
   };
 
-  /**
-   * finalizeOrderCleanup - robust cleanup to ensure UI + server + local are empty
-   */
   const finalizeOrderCleanup = async () => {
     try {
       // 1) try dispatch CLEAR_CART (if your provider supports it)
@@ -346,15 +584,12 @@ export default function Checkout() {
       }
 
       // 2) If removeFromCart exists (the hook used by OffcanvasCart), remove items one-by-one.
-      //    This ensures provider implementations that expect per-item removals are covered.
       try {
         if (typeof removeFromCart === "function") {
-          // take a snapshot of current items from hookCart (preferred) or ctxItems
           const toRemove =
             (hookCart && hookCart.length ? hookCart : ctxItems) || [];
           for (const it of toRemove) {
             try {
-              // Some implementations expect { _cid, id, variant } or { id, variant }
               await removeFromCart({
                 _cid: it._cid ?? undefined,
                 id: it.id ?? it.productId,
@@ -362,7 +597,6 @@ export default function Checkout() {
               });
             } catch (itErr) {
               // ignore single-item failures and continue
-              // console.warn("removeFromCart failed for item:", it, itErr);
             }
           }
         }
@@ -382,9 +616,7 @@ export default function Checkout() {
 
       // 4) Clear guest localStorage cart key
       try {
-        // set to empty array or remove key depending on your provider expectations
         localStorage.removeItem(GUEST_KEY);
-        // also set a fallback empty array
         try {
           localStorage.setItem(GUEST_KEY, JSON.stringify([]));
         } catch {}
@@ -418,6 +650,14 @@ export default function Checkout() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
+    // Prevent guests from submitting: require login/signup first
+    if (!authUser) {
+      setMessage(
+        "Silakan daftar / login terlebih dahulu sebelum mengonfirmasi order. Klik Login atau Signup di kotak informasi di sebelah kanan."
+      );
+      return;
+    }
+
     const validationError = validateForm();
     if (validationError) {
       setMessage(validationError);
@@ -441,7 +681,12 @@ export default function Checkout() {
         address,
         items: normalizedItems,
         subtotal,
-        shippingCost,
+        shipping: {
+          courier: null,
+          trackingNumber: null,
+          status: "pending",
+          cost: shippingCost, // store shipping cost
+        },
         total,
         currency: "IDR",
         status: paymentMethod === "cod" ? "pending_payment" : "pending",
@@ -452,11 +697,6 @@ export default function Checkout() {
           status: paymentMethod === "cod" ? "pending" : "pending_payment",
           txId: null,
           paymentDeadlineInfo: getPaymentDeadline(),
-        },
-        shipping: {
-          courier: null,
-          trackingNumber: null,
-          status: "pending",
         },
       };
 
@@ -474,6 +714,7 @@ export default function Checkout() {
             date: Date.now(),
             method: paymentMethod,
             total,
+            shippingCost,
             status: orderObj.status,
             product: normalizedItems,
           });
@@ -508,6 +749,25 @@ export default function Checkout() {
           "payment/status": "confirmed",
         });
 
+        if (authUser && authUser.uid) {
+          try {
+            await update(dbRef(db, `users/${authUser.uid}/orders/${orderId}`), {
+              status: "confirmed",
+              txId,
+            });
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        // ---- DECREMENT STOCK here for COD (confirmed) ----
+        try {
+          await decrementStockForItems(normalizedItems);
+        } catch (stockErr) {
+          console.error("Gagal mengurangi stok setelah COD:", stockErr);
+          // proceed anyway
+        }
+
         // robust cleanup
         await finalizeOrderCleanup();
 
@@ -540,12 +800,20 @@ export default function Checkout() {
           order_id: orderId,
           gross_amount: total,
         },
-        item_details: normalizedItems.map((item) => ({
-          id: item.productId,
-          price: item.price,
-          quantity: item.qty,
-          name: item.name,
-        })),
+        item_details: [
+          ...normalizedItems.map((item) => ({
+            id: item.productId,
+            price: item.price,
+            quantity: item.qty,
+            name: item.name,
+          })),
+          {
+            id: "SHIPPING",
+            price: shippingCost,
+            quantity: 1,
+            name: shippingCost === 0 ? "Gratis Ongkir" : "Ongkos Kirim",
+          },
+        ],
         customer_details: {
           first_name: customerName,
           email: email,
@@ -582,54 +850,87 @@ export default function Checkout() {
       window.snap.pay(tokenData.token, {
         onSuccess: async (result) => {
           console.log("Midtrans success:", result);
-          try {
-            const midtransId = result.transaction_id;
-            await update(dbRef(db, `orders/${orderId}`), {
-              status: "confirmed",
-              "payment/status": "confirmed",
-              "payment/txId": midtransId,
-              txId: midtransId,
-              updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
-            });
+          setSubmitting(true);
+          setMessage("Pembayaran sukses, memproses order...");
 
-            if (authUser && authUser.uid) {
-              await update(
-                dbRef(db, `users/${authUser.uid}/orders/${orderId}`),
-                { status: "confirmed", txId: midtransId }
+          try {
+            const midtransId =
+              result.transaction_id ||
+              (result.order_id ? result.order_id : null);
+
+            // ---- DECREMENT STOCK here for Midtrans success (confirmed) ----
+            try {
+              await decrementStockForItems(normalizedItems);
+            } catch (stockErr) {
+              console.error(
+                "Gagal mengurangi stok setelah Midtrans success:",
+                stockErr
+              );
+              // proceed anyway
+            }
+
+            // update order status to confirmed and save txId
+            try {
+              await update(dbRef(db, `orders/${orderId}`), {
+                status: "confirmed",
+                "payment/status": "confirmed",
+                "payment/txId": midtransId,
+                txId: midtransId,
+                updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
+              });
+
+              if (authUser && authUser.uid) {
+                try {
+                  await update(
+                    dbRef(db, `users/${authUser.uid}/orders/${orderId}`),
+                    { status: "confirmed", txId: midtransId }
+                  );
+                } catch (e) {
+                  // ignore
+                }
+              }
+            } catch (updateErr) {
+              console.error(
+                "Update order after midtrans success failed:",
+                updateErr
               );
             }
+
+            // robust cleanup - must ensure UI cart emptied
+            await finalizeOrderCleanup();
+
+            const orderForPdf = {
+              txId: midtransId,
+              customerName,
+              phone,
+              email,
+              address,
+              items: normalizedItems,
+              subtotal,
+              shippingCost,
+              total,
+              paymentMethod,
+              totalPaid: total,
+            };
+
+            setOrderData(orderForPdf);
+            setOrderCompleted(true);
+            setSubmitting(false);
+            setMessage("Pembayaran berhasil!");
+
+            return false;
           } catch (err) {
-            console.error("Update order after success failed:", err);
+            console.error("Error processing midtrans success:", err);
+            setSubmitting(false);
+            setMessage(
+              "Terjadi kesalahan saat memproses order setelah pembayaran."
+            );
           }
-
-          // robust cleanup - must ensure UI cart emptied
-          await finalizeOrderCleanup();
-
-          const orderForPdf = {
-            txId: result.transaction_id,
-            customerName,
-            phone,
-            email,
-            address,
-            items: normalizedItems,
-            subtotal,
-            shippingCost,
-            total,
-            paymentMethod,
-            totalPaid: total,
-          };
-
-          setOrderData(orderForPdf);
-          setOrderCompleted(true);
-          setSubmitting(false);
-          setMessage("Pembayaran berhasil!");
-
-          return false;
         },
         onPending: async (result) => {
           console.log("Midtrans pending:", result);
           try {
-            const midtransId = result.transaction_id;
+            const midtransId = result.transaction_id || result.order_id || null;
             await update(dbRef(db, `orders/${orderId}`), {
               status: "pending",
               "payment/status": "pending",
@@ -648,6 +949,7 @@ export default function Checkout() {
             console.error("Update order after pending failed:", err);
           }
 
+          // NOTE: for pending we DO NOT decrement stock. Wait until confirmed.
           // robust cleanup
           await finalizeOrderCleanup();
 
@@ -693,15 +995,7 @@ export default function Checkout() {
     }
   };
 
-  // renderPaymentInputs, success screen and UI are same as previously — omitted here to keep code compact in message
-  // (Full UI is unchanged; ensure you copy the UI parts from your prior version)
-
-  // For brevity in this message: reuse your existing renderPaymentInputs and UI markup exactly as before,
-  // they depend on getPaymentDeadline(), normalizedItems, subtotal, total, etc.
-
-  // Success screen and main UI (use the same markup as in your prior file).
-
-  // --- Below: reuse the same renderPaymentInputs and return JSX from the prior code ---
+  // Render payment instructions
   const renderPaymentInputs = () => {
     switch (paymentMethod) {
       case "midtrans":
@@ -768,7 +1062,7 @@ export default function Checkout() {
     }
   };
 
-  // Success screen (identical to your previous UI)
+  // Success screen
   if (orderCompleted) {
     return (
       <div
@@ -882,7 +1176,7 @@ export default function Checkout() {
     );
   }
 
-  // Main checkout UI (same as your previous implementation)
+  // Main checkout UI
   return (
     <div
       style={{
@@ -956,17 +1250,12 @@ export default function Checkout() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontWeight: 600, color: colors.primary }}>
-                    Nomor HP
+                    Telepon
                   </label>
                   <input
-                    type="tel"
-                    inputMode="numeric"
-                    pattern="\d*"
+                    type="text"
                     value={phone}
-                    onChange={(e) => {
-                      const onlyDigits = e.target.value.replace(/\D/g, "");
-                      setPhone(onlyDigits);
-                    }}
+                    onChange={(e) => setPhone(e.target.value)}
                     disabled={submitting}
                     placeholder="08xxxxxxxxxx"
                     style={{
@@ -989,7 +1278,7 @@ export default function Checkout() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={submitting}
-                  placeholder="email@example.com"
+                  placeholder="email@contoh.com"
                   style={{
                     width: "100%",
                     padding: 8,
@@ -1007,8 +1296,7 @@ export default function Checkout() {
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   disabled={submitting}
-                  rows={3}
-                  placeholder="Masukkan alamat lengkap"
+                  placeholder="Alamat lengkap"
                   style={{
                     width: "100%",
                     padding: 8,
@@ -1021,9 +1309,9 @@ export default function Checkout() {
               <h4
                 style={{
                   color: colors.primary,
-                  marginBottom: 10,
-                  borderBottom: `2px solid ${colors.accent}`,
                   paddingBottom: 8,
+                  borderBottom: `1px dashed ${colors.secondary}`,
+                  marginBottom: 12,
                 }}
               >
                 Metode Pembayaran
@@ -1070,13 +1358,75 @@ export default function Checkout() {
 
               {renderPaymentInputs()}
 
+              {/* If user is guest, show information block to prompt login/signup */}
+              {!authUser && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: "#fff9f2",
+                    border: `1px dashed ${colors.secondary}`,
+                  }}
+                >
+                  <div style={{ textAlign: "center" }}>
+                    <i className="fas fa-receipt fa-3x text-muted mb-3"></i>
+                    <h4 style={{ marginTop: 8 }}>Belum Login</h4>
+                    <p style={{ color: colors.textLight }}>
+                      Anda harus mendaftar atau masuk untuk menyelesaikan
+                      pembelian. Barang yang ada di keranjang akan tetap
+                      tersimpan setelah Anda mendaftar/masuk.
+                    </p>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Link
+                        to={`/login?redirect=/checkout`}
+                        className="btn"
+                        style={{
+                          backgroundColor: colors.primary,
+                          color: colors.white,
+                          padding: "8px 14px",
+                          borderRadius: 8,
+                          textDecoration: "none",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Login
+                      </Link>
+                      <Link
+                        to={`/signup?redirect=/checkout`}
+                        className="btn"
+                        style={{
+                          backgroundColor: colors.secondary,
+                          color: colors.primary,
+                          padding: "8px 14px",
+                          borderRadius: 8,
+                          textDecoration: "none",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Sign Up
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div style={{ marginTop: 12 }}>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || !authUser}
                   style={{
                     backgroundColor: submitting
                       ? colors.textLight
+                      : !authUser
+                      ? "#d6d6d6"
                       : colors.primary,
                     color: colors.white,
                     padding: 12,
@@ -1084,10 +1434,13 @@ export default function Checkout() {
                     border: "none",
                     fontWeight: 600,
                     width: "100%",
+                    cursor: submitting || !authUser ? "not-allowed" : "pointer",
                   }}
                 >
                   {submitting
                     ? "Memproses Order..."
+                    : !authUser
+                    ? "Silakan Login / Daftar untuk Melanjutkan"
                     : `Konfirmasi Order - Rp${total.toLocaleString("id-ID")}`}
                 </button>
               </div>
@@ -1149,19 +1502,59 @@ export default function Checkout() {
             </div>
 
             <hr />
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 6,
+              }}
+            >
               <div>Subtotal</div>
               <div>Rp{subtotal.toLocaleString("id-ID")}</div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <div>Biaya Kirim</div>
-              <div>Rp{shippingCost.toLocaleString("id-ID")}</div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 6,
+                color: shippingCost === 0 ? "green" : "inherit",
+                fontWeight: shippingCost === 0 ? 700 : "normal",
+              }}
+            >
+              <div>{shippingCost === 0 ? "Ongkir" : "Ongkir"}</div>
+              <div>
+                {shippingCost === 0
+                  ? "Gratis"
+                  : `Rp${shippingCost.toLocaleString("id-ID")}`}
+              </div>
             </div>
-            <hr />
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <strong>Total</strong>
-              <strong>Rp{total.toLocaleString("id-ID")}</strong>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 700,
+              }}
+            >
+              <div>Total</div>
+              <div>Rp{total.toLocaleString("id-ID")}</div>
             </div>
+
+            {subtotal > FREE_SHIPPING_THRESHOLD && (
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 12,
+                  color: "green",
+                  fontWeight: 600,
+                }}
+              >
+                🎉 Selamat! Subtotal Anda di atas Rp
+                {FREE_SHIPPING_THRESHOLD.toLocaleString("id-ID")} — gratis
+                ongkir.
+              </div>
+            )}
           </div>
         </div>
       </div>

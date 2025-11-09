@@ -1,3 +1,4 @@
+// src/contexts/CartContext.jsx
 import React, {
   createContext,
   useContext,
@@ -85,6 +86,14 @@ export const CartProvider = ({ children }) => {
   const { user } = useAuth();
   const [state, dispatch] = useReducer(reducer, initialState);
   const remoteListenerRef = useRef(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const readGuest = () => {
     try {
@@ -101,6 +110,12 @@ export const CartProvider = ({ children }) => {
   const writeGuest = (items) => {
     try {
       localStorage.setItem(GUEST_KEY, JSON.stringify(items || []));
+      // notify other listeners
+      try {
+        window.dispatchEvent(
+          new CustomEvent("dsavee_cart_updated", { detail: { items } })
+        );
+      } catch {}
     } catch (e) {
       console.error("writeGuest error:", e);
     }
@@ -122,6 +137,7 @@ export const CartProvider = ({ children }) => {
 
   // listen realtime when user logged in; otherwise load guest local
   useEffect(() => {
+    // cleanup previous listener
     if (remoteListenerRef.current) {
       try {
         remoteListenerRef.current();
@@ -140,13 +156,22 @@ export const CartProvider = ({ children }) => {
             qty: Number(it.qty || 0),
             price: Number(it.price || 0),
           }));
-          dispatch({ type: "SET_CART", payload: items });
+          // only update if mounted
+          if (mountedRef.current) {
+            dispatch({ type: "SET_CART", payload: items });
+            try {
+              window.dispatchEvent(
+                new CustomEvent("dsavee_cart_updated", { detail: { items } })
+              );
+            } catch {}
+          }
         },
         (err) => {
           console.error("onValue cart error:", err);
         }
       );
-      remoteListenerRef.current = () => off();
+      // onValue returns an unsubscribe function in modular SDK
+      remoteListenerRef.current = typeof off === "function" ? off : () => {};
     } else {
       const guestCart = readGuest();
       dispatch({ type: "SET_CART", payload: guestCart });
@@ -191,6 +216,15 @@ export const CartProvider = ({ children }) => {
           };
           await set(newRef, itemToSave);
         }
+
+        // notify UI immediately (optimistic)
+        try {
+          window.dispatchEvent(
+            new CustomEvent("dsavee_cart_updated", {
+              detail: { items: state.items },
+            })
+          );
+        } catch {}
       } else {
         dispatch({ type: "ADD_LOCAL", payload });
         const cur = readGuest();
@@ -255,7 +289,7 @@ export const CartProvider = ({ children }) => {
             }
           }
         }
-        // remote listener updates local state
+        // remote listener will push the final state
       } else {
         const cur = readGuest();
         const updated = cur.map((i) =>
@@ -310,9 +344,35 @@ export const CartProvider = ({ children }) => {
                   )
               );
               await set(userCartRef, filtered);
+            } else {
+              // if it's object map, try to remove matching children
+              const entries = Object.entries(val || {});
+              let removed = false;
+              for (const [k, v] of entries) {
+                if (
+                  v &&
+                  (v.id === (payload.id ?? payload) ||
+                    k === String(payload._cid ?? ""))
+                ) {
+                  await set(ref(rtdb, `users/${user.uid}/cart/${k}`), null);
+                  removed = true;
+                }
+              }
+              if (!removed) {
+                // fallback clear node
+                await set(userCartRef, null);
+              }
             }
           }
         }
+
+        try {
+          window.dispatchEvent(
+            new CustomEvent("dsavee_cart_updated", {
+              detail: { items: state.items },
+            })
+          );
+        } catch {}
       } else {
         const cur = readGuest();
         const filtered = cur.filter(
@@ -334,10 +394,32 @@ export const CartProvider = ({ children }) => {
     try {
       if (user && user.uid) {
         const userCartRef = ref(rtdb, `users/${user.uid}/cart`);
-        await set(userCartRef, []);
+        // remove the whole node (safer to remove than set to [])
+        try {
+          await remove(userCartRef);
+        } catch (e) {
+          // fallback to set null if remove not available
+          await set(userCartRef, null);
+        }
+        // ensure immediate UI update (optimistic)
+        dispatch({ type: "SET_CART", payload: [] });
+        try {
+          window.dispatchEvent(
+            new CustomEvent("dsavee_cart_cleared", {
+              detail: { ts: Date.now() },
+            })
+          );
+        } catch {}
       } else {
         writeGuest([]);
         dispatch({ type: "SET_CART", payload: [] });
+        try {
+          window.dispatchEvent(
+            new CustomEvent("dsavee_cart_cleared", {
+              detail: { ts: Date.now() },
+            })
+          );
+        } catch {}
       }
     } catch (err) {
       console.error("clearCart error:", err);

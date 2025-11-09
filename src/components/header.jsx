@@ -146,6 +146,32 @@ export default function Header() {
                 <li>
                   {user ? (
                     <div className="d-flex align-items-center gap-2">
+                      {/* Jika admin: tampilkan profile sebagai teks non-link yang tidak bisa diklik */}
+                      {isAdmin ? (
+                        <div
+                          className="text-decoration-none"
+                          style={{
+                            cursor: "default",
+                            opacity: 0.85,
+                            userSelect: "none",
+                            display: "inline-block",
+                          }}
+                          title="Profil tidak tersedia untuk akun admin"
+                        >
+                          <strong>{user.displayName || user.email}</strong>
+                          <div style={{ fontSize: 12, color: "#666" }}>
+                            {user.email}
+                          </div>
+                        </div>
+                      ) : (
+                        <Link to="/profile" className="text-decoration-none">
+                          <strong>{user.displayName || user.email}</strong>
+                          <div style={{ fontSize: 12, color: "#666" }}>
+                            {user.email}
+                          </div>
+                        </Link>
+                      )}
+
                       {/* Logout triggers confirmation modal (tetap tersedia untuk admin dan non-admin) */}
                       <button
                         className="btn text-white fw-semibold"
