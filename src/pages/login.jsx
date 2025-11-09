@@ -334,7 +334,7 @@ const Login = () => {
           disabled={processing}
           style={{ width: "100%", marginTop: "5px" }}
         >
-          {processing ? "Memproses..." : "Login"}
+          {processing ? "Loading..." : "Login"}
         </button>
       </form>
 
@@ -359,12 +359,12 @@ const Login = () => {
             width="20"
             height="20"
           />
-          Sign in with Google
+          Login with Google
         </button>
       </div>
 
       <p style={{ marginTop: 12 }}>
-        Belum punya akun? <Link to="/signup">Daftar</Link>
+        Belum punya akun? <Link to="/signup">Sign Up</Link>
       </p>
     </div>
   );

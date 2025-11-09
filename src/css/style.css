@@ -998,3 +998,131 @@ a.btn:hover {
 .toggle-password:hover {
   color: #000;
 }
+
+/* footer */
+/* footer.css
+   Pastikan variabel :root sudah didefinisikan di global CSS (user sudah memberikan) */
+.site-footer {
+  background: linear-gradient(180deg, var(--dark-color) 0%, #151515 100%);
+  color: var(--light-color);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial;
+}
+
+/* Brand */
+.site-footer .brand {
+  font-size: 1.4rem;
+  margin-bottom: 0.6rem;
+  color: var(--accent-color);
+  font-weight: 700;
+}
+
+/* Contact */
+.site-footer .contact-address {
+  color: var(--light-grey-color);
+  margin-bottom: 0.6rem;
+  font-size: 0.95rem;
+}
+.site-footer .contact-item strong {
+  color: var(--grey-color);
+  font-weight: 600;
+}
+.site-footer .contact-link {
+  color: var(--light-color);
+  text-decoration: none;
+}
+.site-footer .contact-link:hover {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
+/* Section titles & links */
+.site-footer .section-title {
+  font-size: 0.95rem;
+  margin-bottom: 0.8rem;
+  color: var(--light-grey-color);
+  font-weight: 600;
+}
+.site-footer .quick-links li {
+  margin-bottom: 0.5rem;
+}
+.site-footer .quick-links a {
+  color: var(--grey-color);
+  text-decoration: none;
+  transition: color 0.15s ease, transform 0.12s ease;
+}
+.site-footer .quick-links a:hover {
+  color: var(--accent-color);
+  transform: translateX(3px);
+}
+
+/* Social icons */
+.site-footer .socials {
+  align-items: center;
+}
+.site-footer .social-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--light-color);
+  text-decoration: none;
+  transition: transform 0.12s ease, background 0.15s ease, color 0.15s ease;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+.site-footer .social-icon svg {
+  display: block;
+}
+.site-footer .social-icon:hover {
+  transform: translateY(-4px);
+  background: linear-gradient(180deg, var(--accent-color), #ffbb20);
+  color: var(--dark-color);
+  box-shadow: 0 6px 18px rgba(105, 149, 177, 0.12);
+}
+
+/* small handle text */
+.site-footer .handle-text {
+  margin-left: 0.6rem;
+  color: var(--light-dark-color);
+  line-height: 1.05;
+}
+
+/* separator */
+.site-footer .footer-sep {
+  border-color: rgba(255, 255, 255, 0.06);
+  margin-top: 1.4rem;
+}
+
+/* bottom row */
+.site-footer .copyright-text {
+  color: var(--light-grey-color);
+}
+.site-footer .back-to-top {
+  color: var(--light-color);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+.site-footer .back-to-top:hover {
+  background: var(--light-primary-color);
+  color: var(--dark-color);
+  transform: translateY(-3px);
+}
+
+/* responsive tweaks */
+@media (max-width: 767px) {
+  .site-footer .handle-text {
+    display: none;
+  }
+  .site-footer .brand {
+    font-size: 1.25rem;
+  }
+  .site-footer {
+    padding-bottom: 2rem;
+  }
+}

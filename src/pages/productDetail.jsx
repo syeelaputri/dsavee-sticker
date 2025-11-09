@@ -473,7 +473,7 @@ export default function ProductDetail() {
             className="btn btn-outline-secondary mb-4"
             onClick={() => navigate(-1)}
           >
-            ← Back to Products
+            ← Back
           </button>
 
           <h1 className="h2 mb-3">{product.name}</h1>
@@ -566,7 +566,7 @@ export default function ProductDetail() {
             <div className="mb-4">
               <h6 className="mb-3">
                 <i className="uil uil-palette me-2"></i>
-                Pilih Warna / Varian:
+                Pilih Varian:
               </h6>
               <div className="d-flex gap-3 flex-wrap">
                 {availableColors.map((color, index) => (
@@ -662,7 +662,7 @@ export default function ProductDetail() {
             <div className="row">
               <div className="col-6">
                 <small className="text-muted">Lokasi:</small>
-                <p className="mb-1 small fw-bold">Kecamatan Airmadidi</p>
+                <p className="mb-1 small fw-bold">Airmadidi</p>
               </div>
               <div className="col-6">
                 <small className="text-muted">Ongkir:</small>
@@ -676,22 +676,6 @@ export default function ProductDetail() {
           <div className="d-flex align-items-center gap-3 mb-4">
             <label className="form-label mb-0 fw-bold">Quantity:</label>
             <QuantityPicker qty={qty} onChange={setQty} max={currentStock} />
-          </div>
-
-          <div className="total-price mb-4 p-3 bg-primary text-white rounded">
-            <div className="d-flex justify-content-between">
-              <span>Subtotal:</span>
-              <span>Rp{(safePrice * qty).toFixed(2)}</span>
-            </div>
-            <div className="d-flex justify-content-between">
-              <span>Ongkir:</span>
-              <span>Rp{shippingCost.toFixed(2)}</span>
-            </div>
-            <hr className="my-2" />
-            <div className="d-flex justify-content-between fw-bold">
-              <span>Total:</span>
-              <span>Rp{totalPrice.toFixed(2)}</span>
-            </div>
           </div>
 
           <button

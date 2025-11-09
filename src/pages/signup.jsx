@@ -302,7 +302,7 @@ const SignUp = () => {
           </span>
         </div>
         <button type="submit" disabled={processing}>
-          {processing ? "Memproses..." : "Daftar"}
+          {processing ? "Loading..." : "Sign Up"}
         </button>
       </form>
 

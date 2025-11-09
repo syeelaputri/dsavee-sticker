@@ -296,7 +296,7 @@ export default function OffcanvasCart() {
             ))}
 
             <li className="list-group-item d-flex justify-content-between">
-              <span>Total (Rp)</span>
+              <span>Total</span>
               <strong>Rp{total.toFixed(2)}</strong>
             </li>
           </ul>

@@ -330,7 +330,7 @@ export default function Profile() {
             <div className="edit-form">
               <div className="row">
                 <div className="col-md-6 mb-3">
-                  <label className="form-label">Full Name</label>
+                  <label className="form-label">Name</label>
                   <input
                     type="text"
                     className="form-control"
@@ -340,17 +340,7 @@ export default function Profile() {
                   />
                 </div>
                 <div className="col-md-6 mb-3">
-                  <label className="form-label">Email</label>
-                  <input
-                    type="email"
-                    className="form-control"
-                    name="email"
-                    value={editForm.email}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="col-md-6 mb-3">
-                  <label className="form-label">Phone Number</label>
+                  <label className="form-label">Phone</label>
                   <input
                     type="tel"
                     inputMode="numeric"
@@ -362,6 +352,16 @@ export default function Profile() {
                     onChange={handleInputChange}
                     onPaste={handlePhonePaste}
                     placeholder="08xxxxxxxxxx"
+                  />
+                </div>
+                <div className="col-md-6 mb-3">
+                  <label className="form-label">Email</label>
+                  <input
+                    type="email"
+                    className="form-control"
+                    name="email"
+                    value={editForm.email}
+                    onChange={handleInputChange}
                   />
                 </div>
                 <div className="col-md-6 mb-3">
@@ -406,12 +406,12 @@ export default function Profile() {
       <div className="card mb-4">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-center">
-            <h5 className="card-title mb-0">Riwayat Pesanan</h5>
+            <h5 className="card-title mb-0">Order History</h5>
             <Link to="/orders" className="btn btn-outline-primary btn-sm">
-              Lihat Semua Pesanan
+              View All Orders
             </Link>
           </div>
-          <p className="text-muted mt-2">Kelola dan lacak pesanan Anda</p>
+          <p className="text-muted mt-2">Manage and track your orders</p>
         </div>
       </div>
 
@@ -455,7 +455,9 @@ export default function Profile() {
             <div className="card-body">
               <h5 className="card-title">Help Center</h5>
               <p className="card-text">Need assistance?</p>
-              <button className="btn btn-outline-primary">Contact Us</button>
+              <Link to="/aboutUs#kontak" className="btn btn-outline-primary">
+                Help Center
+              </Link>
             </div>
           </div>
         </div>

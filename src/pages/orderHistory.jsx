@@ -11,76 +11,10 @@ const OrderHistory = () => {
   const [proofImage, setProofImage] = useState("");
   const [orders, setOrders] = useState([]); // orders berasal dari RTDB (users/{uid}/orders)
   const [loading, setLoading] = useState(true);
-  const [isDemo, setIsDemo] = useState(true);
 
   const auth = getAuth();
   const db = getDatabase();
   const ordersListenerRef = useRef(null);
-
-  // sample fallback data (UI tetap sama saat demo)
-  const sampleOrders = [
-    {
-      id: "ORD-001",
-      items: [
-        {
-          name: "Flower Sticker Pack",
-          price: 25000,
-          quantity: 2,
-          color: "Pink",
-        },
-        { name: "Character Sticker", price: 15000, quantity: 1, color: "Blue" },
-      ],
-      totalAmount: 65000,
-      paymentMethod: "Bank Transfer",
-      status: "completed",
-      createdAt: new Date("2024-01-15").toISOString(),
-      shippingAddress: "Jl. Contoh No. 123, Airmadidi",
-      raw: {
-        tracking: {
-          received: new Date("2024-01-15T08:00:00").toISOString(),
-          processed: new Date("2024-01-15T09:30:00").toISOString(),
-          to_courier: new Date("2024-01-15T12:00:00").toISOString(),
-          in_transit: new Date("2024-01-16T07:20:00").toISOString(),
-          delivered: new Date("2024-01-16T14:05:00").toISOString(),
-        },
-      },
-      shippingCost: 10000,
-    },
-    {
-      id: "ORD-002",
-      items: [
-        {
-          name: "Aesthetic Quote Stickers",
-          price: 20000,
-          quantity: 3,
-          color: "Black",
-        },
-      ],
-      totalAmount: 60000,
-      paymentMethod: "Midtrans",
-      status: "processing",
-      createdAt: new Date("2024-01-18").toISOString(),
-      shippingAddress: "Jl. Contoh No. 123, Airmadidi",
-      shippingCost: 10000,
-    },
-    {
-      id: "ORD-003",
-      items: [
-        {
-          name: "Kawaii Animal Stickers",
-          price: 30000,
-          quantity: 1,
-          color: "Yellow",
-        },
-      ],
-      totalAmount: 30000,
-      paymentMethod: "COD",
-      status: "pending",
-      createdAt: new Date("2024-01-20").toISOString(),
-      shippingAddress: "Jl. Contoh No. 123, Airmadidi",
-      shippingCost: 10000,
-    },
-  ];
 
   // styles & helpers
   const styles = {
@@ -190,65 +124,88 @@ const OrderHistory = () => {
     .btn:hover { transform: translateY(-1px); transition: all 0.2s ease; }
   `;
 
-  // getStatusBadge now understands the tracking keys used in timeline
+  // ---------- NORMALISASI STATUS ----------
+  // Pastikan semua status yang dipakai adalah salah satu dari:
+  // 'pending', 'processing', 'shipped', 'in_transit', 'delivered', 'cancelled'
+  const normalizeStatus = (status) => {
+    if (!status && status !== 0) return "pending";
+    const s = String(status).trim().toLowerCase();
+
+    // direct matches
+    if (
+      ["pending", "pending_payment", "received", "created", "new"].includes(s)
+    )
+      return "pending";
+    if (
+      [
+        "processing",
+        "processed",
+        "confirming",
+        "confirmed",
+        "in_process",
+      ].includes(s)
+    )
+      return "processing";
+    if (["shipped", "to_courier", "sent", "dikirim", "on_courier"].includes(s))
+      return "shipped";
+    if (
+      ["in_transit", "on_delivery", "dalam_pengiriman", "delivering"].includes(
+        s
+      )
+    )
+      return "in_transit";
+    if (
+      ["delivered", "completed", "received_by_customer", "diterima"].includes(s)
+    )
+      return "delivered";
+    if (["cancelled", "canceled", "void", "batal"].includes(s))
+      return "cancelled";
+
+    // if not recognized, fallback to 'pending' (no unknown)
+    return "pending";
+  };
+
+  // STATUS / LABELS MAPPING (sesuai permintaan)
+  // Pesanan Diterima = pending
+  // Diproses oleh Penjual = processing
+  // Dikirim ke Kurir = shipped
+  // Dalam Pengiriman = in_transit
+  // Diterima oleh Pembeli = delivered
+  // Dibatalkan = cancelled
+
   const getStatusBadge = (statusKey) => {
+    const key = normalizeStatus(statusKey);
     const statusConfig = {
-      // ensure these keys match timeline keys
-      received: {
-        style: { backgroundColor: "#198754", color: "white" },
+      pending: {
+        style: { backgroundColor: "#ffc107", color: "black" },
         text: "Pesanan Diterima",
       },
-      processed: {
-        style: { backgroundColor: "#198754", color: "white" },
+      processing: {
+        style: { backgroundColor: "#0dcaf0", color: "black" },
         text: "Diproses oleh Penjual",
       },
-      to_courier: {
+      shipped: {
         style: { backgroundColor: "#6f42c1", color: "white" },
         text: "Dikirim ke Kurir",
       },
       in_transit: {
-        style: { backgroundColor: "#0dcaf0", color: "white" },
+        style: { backgroundColor: "#0d6efd", color: "white" },
         text: "Dalam Pengiriman",
       },
       delivered: {
         style: { backgroundColor: "#198754", color: "white" },
         text: "Diterima oleh Pembeli",
       },
-      pending: {
-        style: { backgroundColor: "#ffc107", color: "black" },
-        text: "Pending",
-      },
-      processing: {
-        style: { backgroundColor: "#0dcaf0", color: "white" },
-        text: "Processing",
-      },
-      confirmed: {
-        style: { backgroundColor: "#0d6efd", color: "white" },
-        text: "Confirmed",
-      },
-      shipped: {
-        style: { backgroundColor: "#6f42c1", color: "white" },
-        text: "Shipped",
-      },
-      completed: {
-        style: { backgroundColor: "#198754", color: "white" },
-        text: "Completed",
+      cancelled: {
+        style: { backgroundColor: "#6c757d", color: "white" },
+        text: "Dibatalkan",
       },
       failed: {
         style: { backgroundColor: "#dc3545", color: "white" },
         text: "Failed",
       },
-      cancelled: {
-        style: { backgroundColor: "#6c757d", color: "white" },
-        text: "Cancelled",
-      },
-      default: {
-        style: { backgroundColor: "#6c757d", color: "white" },
-        text: "Unknown",
-      },
     };
-    const key = (statusKey || "default").toLowerCase();
-    const cfg = statusConfig[key] || statusConfig.default;
+    const cfg = statusConfig[key] || statusConfig["pending"];
     return (
       <span style={{ ...styles.badge, ...cfg.style }} className="badge">
         {cfg.text}
@@ -257,19 +214,19 @@ const OrderHistory = () => {
   };
 
   const getStatusDescription = (status) => {
+    const key = normalizeStatus(status);
     const descriptions = {
-      pending: "Pesanan sudah dibuat, menunggu pembayaran",
-      processing: "Pembayaran diterima, pesanan sedang disiapkan",
-      confirmed: "Pesanan dikonfirmasi",
-      shipped: "Pesanan telah dikirim ke kurir",
-      in_transit: "Pesanan sedang dalam pengiriman",
-      completed: "Barang sudah diterima, transaksi selesai",
-      failed: "Pembayaran gagal atau waktu bayar habis",
-      cancelled: "Pesanan dibatalkan",
+      pending:
+        "Pesanan sudah dibuat, menunggu pembayaran atau konfirmasi awal.",
+      processing: "Pembayaran diterima, pesanan sedang disiapkan oleh penjual.",
+      shipped: "Pesanan telah diserahkan ke kurir untuk dikirim.",
+      in_transit: "Pesanan sedang dalam pengiriman menuju alamat tujuan.",
+      delivered: "Pesanan telah diterima oleh pembeli / transaksi selesai.",
+      cancelled: "Pesanan dibatalkan.",
+      failed: "Pembayaran gagal atau status bermasalah.",
     };
-    return (
-      descriptions[(status || "").toLowerCase()] || "Status tidak diketahui"
-    );
+    // selalu mengembalikan deskripsi yang tersedia; fallback ke pending
+    return descriptions[key] || descriptions["pending"];
   };
 
   const formatDate = (dateInput) => {
@@ -303,32 +260,41 @@ const OrderHistory = () => {
       try {
         const orderId = order.id || order.oid || order.orderId;
         if (!orderId) {
-          setSelectedOrder(order);
+          // ensure status normalized even for local object
+          setSelectedOrder({ ...order, status: normalizeStatus(order.status) });
           return;
         }
         const snap = await get(dbRef(db, `orders/${orderId}`));
         if (snap.exists()) {
           const ord = snap.val();
+          let items =
+            ord.items ||
+            ord.product ||
+            order.items ||
+            order.product ||
+            (ord.products && Array.isArray(ord.products) && ord.products) ||
+            [];
+          if (items && typeof items === "object" && !Array.isArray(items)) {
+            items = Object.values(items);
+          }
           const merged = {
             ...order,
             ...ord,
             raw: ord.raw || order.raw || ord,
-            items:
-              ord.items ||
-              ord.product ||
-              order.items ||
-              order.product ||
-              (ord.products && Array.isArray(ord.products) && ord.products) ||
-              [],
+            items,
             createdAt: ord.createdAt || order.createdAt || ord.date || null,
+            // normalize status
+            status: normalizeStatus(
+              ord.status ?? order.status ?? ord.state ?? "pending"
+            ),
           };
           setSelectedOrder(merged);
         } else {
-          setSelectedOrder(order);
+          setSelectedOrder({ ...order, status: normalizeStatus(order.status) });
         }
       } catch (err) {
         console.error("failed to load full order for details:", err);
-        setSelectedOrder(order);
+        setSelectedOrder({ ...order, status: normalizeStatus(order.status) });
       }
     };
 
@@ -345,113 +311,6 @@ const OrderHistory = () => {
     setShowProofModal(false);
     setProofImage("");
   };
-  const needsProofOfPayment = (paymentMethod) =>
-    ["Bank Transfer", "E-wallet", "Crypto Payment"].includes(paymentMethod);
-
-  // listen auth changes -> attach RTDB listener ke users/{uid}/orders
-  useEffect(() => {
-    setLoading(true);
-    const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
-      // clear previous orders listener
-      if (ordersListenerRef.current) {
-        try {
-          ordersListenerRef.current();
-        } catch (e) {}
-        ordersListenerRef.current = null;
-      }
-
-      if (currentUser && currentUser.uid) {
-        setIsDemo(false);
-
-        const userOrdersRef = dbRef(db, `users/${currentUser.uid}/orders`);
-        const off = onValue(
-          userOrdersRef,
-          (snap) => {
-            const val = snap.val();
-            let arr = [];
-
-            if (!val) {
-              arr = [];
-            } else if (Array.isArray(val)) {
-              arr = val
-                .map((it, idx) =>
-                  it ? { id: it.oid || it.id || `ord-${idx}`, ...it } : null
-                )
-                .filter(Boolean);
-            } else if (typeof val === "object") {
-              arr = Object.entries(val).map(([key, v]) => {
-                let items = v.product ?? v.items ?? v.products ?? [];
-                if (
-                  items &&
-                  typeof items === "object" &&
-                  !Array.isArray(items)
-                ) {
-                  items = Object.values(items);
-                }
-                return {
-                  id: v.oid || v.id || key,
-                  items,
-                  totalAmount: v.total ?? v.totalAmount ?? v.totalPrice ?? 0,
-                  paymentMethod:
-                    v.method ?? v.paymentMethod ?? v.payment ?? "Unknown",
-                  status: v.status ?? "pending",
-                  createdAt:
-                    v.date ?? v.createdAt ?? v.timestamp ?? v.time ?? null,
-                  shippingAddress: v.shippingAddress ?? v.address ?? null,
-                  raw: v,
-                };
-              });
-            } else {
-              arr = [];
-            }
-
-            arr = arr.map((o) => ({
-              ...o,
-              createdAt: o.createdAt
-                ? typeof o.createdAt === "number"
-                  ? new Date(o.createdAt).toISOString()
-                  : o.createdAt
-                : null,
-              totalAmount: Number(o.totalAmount || 0),
-            }));
-
-            arr.sort((a, b) => {
-              const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-              const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-              return tb - ta;
-            });
-
-            setOrders(arr);
-            setLoading(false);
-          },
-          (err) => {
-            console.error("onValue orders error:", err);
-            setOrders([]);
-            setLoading(false);
-          }
-        );
-
-        ordersListenerRef.current = () => off();
-      } else {
-        setIsDemo(true);
-        setOrders(sampleOrders);
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      try {
-        unsubAuth();
-      } catch (e) {}
-      if (ordersListenerRef.current) {
-        try {
-          ordersListenerRef.current();
-        } catch (e) {}
-        ordersListenerRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // ---------- PDF generator (mirip Checkout.generateReceiptPDF) ----------
   const generateReceiptPDF = (order, openInNewTab = true) => {
@@ -641,11 +500,6 @@ const OrderHistory = () => {
       return;
     }
 
-    if (isDemo) {
-      generateReceiptPDF(transformOrderForPdf(order), true);
-      return;
-    }
-
     try {
       const orderId = order.id || order.oid || order.orderId;
       if (!orderId) {
@@ -725,24 +579,24 @@ const OrderHistory = () => {
   };
 
   // ---------- TRACKING / TIMELINE helpers ----------
+  // TRACKING_STAGES sekarang menyertakan label sesuai permintaan
   const TRACKING_STAGES = [
-    { key: "received" },
-    { key: "processed" },
-    { key: "to_courier" },
-    { key: "in_transit" },
-    { key: "delivered" },
+    { key: "received", label: "Pesanan Diterima" }, // pending
+    { key: "processed", label: "Diproses oleh Penjual" }, // processing
+    { key: "to_courier", label: "Dikirim ke Kurir" }, // shipped
+    { key: "in_transit", label: "Dalam Pengiriman" }, // in_transit
+    { key: "delivered", label: "Diterima oleh Pembeli" }, // delivered
   ];
 
   const statusToProgressIndex = (status) => {
-    if (!status) return 0;
-    const s = String(status).toLowerCase();
-    if (["pending", "pending_payment"].includes(s)) return 1;
-    if (["confirmed", "processing"].includes(s)) return 2;
-    if (["shipped", "sent", "to_courier", "dikirim"].includes(s)) return 3;
-    if (["in_transit", "on_delivery", "dalam_pengiriman"].includes(s)) return 4;
-    if (["delivered", "completed", "received", "diterima"].includes(s))
-      return 5;
-    return 0;
+    const s = normalizeStatus(status);
+    if (s === "pending") return 1;
+    if (s === "processing") return 2;
+    if (s === "shipped") return 3;
+    if (s === "in_transit") return 4;
+    if (s === "delivered") return 5;
+    if (s === "cancelled") return -1;
+    return 1;
   };
 
   const buildTimeline = (order) => {
@@ -759,16 +613,29 @@ const OrderHistory = () => {
       (raw && (raw.updatedAt || raw.lastUpdated || raw.updated)) ||
       null;
 
-    const progress = statusToProgressIndex(order.status || (raw && raw.status));
+    const normalized = normalizeStatus(order.status ?? (raw && raw.status));
+    const progress = statusToProgressIndex(normalized);
 
     const entries = TRACKING_STAGES.map((stage, idx) => {
       let ts = null;
-      if (tracking && tracking[stage.key]) ts = tracking[stage.key];
-      if (!ts && tracking && tracking[stage.label]) ts = tracking[stage.label];
-      if (!ts && idx === 0 && createdAt) ts = createdAt;
+      // try multiple key variations
+      if (tracking) {
+        ts =
+          tracking[stage.key] ||
+          tracking[stage.key.toLowerCase()] ||
+          tracking[stage.label] ||
+          tracking[stage.label.toLowerCase()] ||
+          null;
+      }
+
+      // if first step and createdAt present, use it
+      if (!ts && stage.key === "received" && createdAt) ts = createdAt;
+
+      // if step is at current progress index and timestamp missing, use updatedAt as fallback
       if (!ts && progress === idx + 1 && updatedAt) ts = updatedAt;
 
-      const completed = progress >= idx + 1;
+      const completed = Boolean(ts) || (progress >= idx + 1 && progress > 0);
+
       return {
         key: stage.key,
         label: stage.label,
@@ -781,14 +648,32 @@ const OrderHistory = () => {
       };
     });
 
-    // Pastikan dua langkah pertama selalu dianggap berhasil (hijau)
-    if (entries.length >= 1) {
-      entries[0].completed = true;
-      if (!entries[0].timestamp && createdAt) entries[0].timestamp = createdAt;
-    }
-    if (entries.length >= 2) {
-      entries[1].completed = true;
-      if (!entries[1].timestamp && createdAt) entries[1].timestamp = createdAt;
+    // If cancelled in status/raw, append cancelled entry (with normalized handling)
+    const isCancelled =
+      normalized === "cancelled" ||
+      String(order.status || "")
+        .toLowerCase()
+        .includes("cancel") ||
+      String((raw && raw.status) || "")
+        .toLowerCase()
+        .includes("cancel");
+
+    if (isCancelled) {
+      const cancelTs =
+        (order.raw && (order.raw.cancelledAt || order.raw.cancelled_at)) ||
+        order.cancelledAt ||
+        order.updatedAt ||
+        null;
+      entries.push({
+        key: "cancelled",
+        label: "Dibatalkan",
+        timestamp: cancelTs
+          ? typeof cancelTs === "number"
+            ? new Date(cancelTs).toISOString()
+            : cancelTs
+          : null,
+        completed: true,
+      });
     }
 
     return entries;
@@ -811,14 +696,14 @@ const OrderHistory = () => {
                       : styles.timelineTitlePending
                   }
                 >
-                  {done ? "✓ " : "○ "} {e.label}
+                  {e.label}
                 </div>
                 <div style={styles.smallMuted}>
                   {e.timestamp
                     ? formatDate(e.timestamp)
-                    : done
-                    ? "Selesai (tanggal tidak tersedia)"
-                    : "Belum terselesaikan"}
+                    : e.completed
+                    ? "Tercapai (tanggal tidak tersedia)"
+                    : "Belum tercapai"}
                 </div>
               </div>
             </li>
@@ -835,15 +720,13 @@ const OrderHistory = () => {
     for (let i = entries.length - 1; i >= 0; i--) {
       if (entries[i].completed) return entries[i];
     }
-    // fallback ke first
-    return (
-      entries[0] || {
-        key: "pending",
-        label: "Pending",
-        timestamp: null,
-        completed: false,
-      }
-    );
+    // fallback: always return first stage as pending
+    return {
+      key: "received",
+      label: "Pesanan Diterima",
+      timestamp: null,
+      completed: false,
+    };
   };
 
   const calcSubtotal = (items) => {
@@ -872,6 +755,111 @@ const OrderHistory = () => {
     return Number(order.shippingCost ?? 0) || 0;
   };
 
+  // listen auth changes -> attach RTDB listener ke users/{uid}/orders
+  useEffect(() => {
+    setLoading(true);
+    const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
+      // clear previous orders listener
+      if (ordersListenerRef.current) {
+        try {
+          ordersListenerRef.current();
+        } catch (e) {}
+        ordersListenerRef.current = null;
+      }
+
+      if (currentUser && currentUser.uid) {
+        const userOrdersRef = dbRef(db, `users/${currentUser.uid}/orders`);
+        const off = onValue(
+          userOrdersRef,
+          (snap) => {
+            const val = snap.val();
+            let arr = [];
+
+            if (!val) {
+              arr = [];
+            } else if (Array.isArray(val)) {
+              arr = val
+                .map((it, idx) =>
+                  it ? { id: it.oid || it.id || `ord-${idx}`, ...it } : null
+                )
+                .filter(Boolean);
+            } else if (typeof val === "object") {
+              arr = Object.entries(val).map(([key, v]) => {
+                let items = v.product ?? v.items ?? v.products ?? [];
+                if (
+                  items &&
+                  typeof items === "object" &&
+                  !Array.isArray(items)
+                ) {
+                  items = Object.values(items);
+                }
+                // normalize status here to avoid any "unknown"
+                const normalizedStatus = normalizeStatus(
+                  v.status ?? v.state ?? v.orderStatus ?? "pending"
+                );
+                return {
+                  id: v.oid || v.id || key,
+                  items,
+                  totalAmount: v.total ?? v.totalAmount ?? v.totalPrice ?? 0,
+                  paymentMethod:
+                    v.method ?? v.paymentMethod ?? v.payment ?? "Unknown",
+                  status: normalizedStatus,
+                  createdAt:
+                    v.date ?? v.createdAt ?? v.timestamp ?? v.time ?? null,
+                  shippingAddress: v.shippingAddress ?? v.address ?? null,
+                  raw: v,
+                };
+              });
+            } else {
+              arr = [];
+            }
+
+            arr = arr.map((o) => ({
+              ...o,
+              createdAt: o.createdAt
+                ? typeof o.createdAt === "number"
+                  ? new Date(o.createdAt).toISOString()
+                  : o.createdAt
+                : null,
+              totalAmount: Number(o.totalAmount || 0),
+            }));
+
+            arr.sort((a, b) => {
+              const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return tb - ta;
+            });
+
+            setOrders(arr);
+            setLoading(false);
+          },
+          (err) => {
+            console.error("onValue orders error:", err);
+            setOrders([]);
+            setLoading(false);
+          }
+        );
+
+        ordersListenerRef.current = () => off();
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      try {
+        unsubAuth();
+      } catch (e) {}
+      if (ordersListenerRef.current) {
+        try {
+          ordersListenerRef.current();
+        } catch (e) {}
+        ordersListenerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div style={styles.container}>
       <style>{mediaQueryStyles}</style>
@@ -880,20 +868,11 @@ const OrderHistory = () => {
         <div className="row">
           <div className="col-12">
             <div style={styles.header} className="header">
-              <h2>Riwayat Pesanan</h2>
-              <span className="text-muted">{orders.length} pesanan</span>
+              <h2>Order History</h2>
+              <span className="text-muted">
+                {orders.length} order{orders.length !== 1 ? "s" : ""}
+              </span>
             </div>
-
-            {isDemo && (
-              <div className="alert alert-info mb-4">
-                <strong>Demo Mode:</strong> Menampilkan sample data order
-                history.
-                <Link to="/login" className="alert-link ms-1">
-                  Login
-                </Link>{" "}
-                untuk mengakses fitur lengkap.
-              </div>
-            )}
 
             {orders.length === 0 ? (
               <div className="text-center py-5">
@@ -918,9 +897,9 @@ const OrderHistory = () => {
                           <th>Order ID</th>
                           <th>Tanggal</th>
                           <th>Metode Pembayaran</th>
-                          <th>Total Amount</th>
+                          <th>Total</th>
                           <th>Status</th>
-                          <th>Aksi</th>
+                          <th>Detail</th>
                           <th>Invoice</th>
                         </tr>
                       </thead>
@@ -947,12 +926,7 @@ const OrderHistory = () => {
                                   {formatPrice(order.totalAmount)}
                                 </strong>
                               </td>
-                              <td>
-                                {getStatusBadge(statusEntry.key)}
-                                <small className="d-block text-muted">
-                                  {statusEntry.label}
-                                </small>
-                              </td>
+                              <td>{getStatusBadge(order.status)}</td>
                               <td>
                                 <div className="btn-group">
                                   <button
@@ -961,19 +935,6 @@ const OrderHistory = () => {
                                   >
                                     <i className="fas fa-eye me-1"></i> Detail
                                   </button>
-                                  {needsProofOfPayment(order.paymentMethod) &&
-                                    order.status === "pending" && (
-                                      <button
-                                        className="btn btn-sm btn-outline-warning"
-                                        onClick={() => {
-                                          setSelectedOrder(order);
-                                          setShowProofModal(true);
-                                        }}
-                                      >
-                                        <i className="fas fa-upload me-1"></i>{" "}
-                                        Upload Proof
-                                      </button>
-                                    )}
                                 </div>
                               </td>
                               <td>
@@ -1063,7 +1024,7 @@ const OrderHistory = () => {
                   <tfoot>
                     <tr>
                       <td colSpan="4" className="text-end">
-                        <strong>Pengiriman:</strong>
+                        <strong>Ongkir:</strong>
                       </td>
                       <td>
                         <strong>
@@ -1090,16 +1051,12 @@ const OrderHistory = () => {
 
               {/* Tracking timeline */}
               <h6 className="mt-4 mb-2">Order Tracking</h6>
+
+              {/* NOTE: Bagian "Status Pesanan:" dihapus sesuai permintaan.
+                  Timeline di bawah masih menampilkan setiap langkah + waktu tercapai. */}
+
+              {/* Timeline: setiap langkah menampilkan label + waktu tercapai */}
               <div>{renderTimeline(selectedOrder)}</div>
-            </div>
-            <div style={styles.modalFooter}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={handleCloseDetails}
-              >
-                Tutup
-              </button>
             </div>
           </div>
         </div>

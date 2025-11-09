@@ -1,23 +1,45 @@
 // src/pages/aboutUs.jsx
 import React, { useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function AboutUs() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   useEffect(() => {
-    window.scrollTo(0, 0);
     document.title = "About Us — Dsavee";
-  }, []);
+
+    if (location.hash) {
+      // scroll ke element sesuai hash
+      const element = document.querySelector(location.hash);
+      if (element) {
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: "smooth" });
+        }, 50);
+      }
+    } else {
+      window.scrollTo(0, 0);
+    }
+  }, [location]);
 
   return (
     <main className="container my-5">
+      <button
+        className="btn btn-outline-secondary mb-4"
+        onClick={() => navigate(-1)}
+        aria-label="Back"
+      >
+        ← Back
+      </button>
+
       {/* Hero */}
       <section className="row align-items-center mb-5">
         <div className="col-lg-6">
           <h1 className="display-5 fw-bold">Tentang Dsavee</h1>
           <p className="lead text-muted">
-            Dsavee adalah platform retail stiker yang berfokus untuk menyediakan
-            produk kreatif dan fungsional bagi mahasiswa serta masyarakat di
-            sekitar kawasan kampus. Kami menghadirkan beragam stiker berkualitas
-            — mulai dari desain populer hingga ilustrasi estetik.
+            Dsavee adalah platform jual stiker yang berfokus untuk menyediakan
+            produk kreatif dan fungsional. Kami menghadirkan beragam stiker
+            berkualitas — mulai dari desain populer hingga ilustrasi estetik.
           </p>
 
           <div className="mt-4 d-flex gap-2">
@@ -25,7 +47,7 @@ export default function AboutUs() {
               Visi & Misi
             </a>
             <a href="#kontak" className="btn btn-outline-secondary">
-              Kontak Kami
+              Kontak
             </a>
           </div>
         </div>
@@ -47,33 +69,25 @@ export default function AboutUs() {
         <div className="col-md-7">
           <h3>Apa yang kami jual</h3>
           <p className="text-muted">
-            Dsavee Sticker menyediakan berbagai jenis stiker: Stiker karakter
-            populer (anime, k-pop, dll). Stiker lucu & estetik untuk hias
-            laptop, HP, motor, journaling.
+            Dsavee menyediakan berbagai jenis stiker: Stiker karakter populer,
+            stiker lucu & estetik untuk hias laptop, HP, planner, dan hadiah.
           </p>
 
           <h3 className="mt-4">Latar belakang</h3>
           <p className="text-muted">
-            Dsavee didirikan pada tahun 2025 oleh sekumpulan mahasiswa yang
-            melihat tingginya kebutuhan akan stiker unik dan terjangkau di
-            lingkungan kampus. Pembelian dari toko online luar daerah sering
-            kali membutuhkan waktu lama dan tidak sesuai dengan preferensi
-            desain lokal.
-            <p className="text-muted">
-              Melihat peluang tersebut, Dsavee hadir sebagai solusi yang:
-            </p>
-            <li>Lebih dekat dengan kebutuhan mahasiswa.</li>
-            <li>Lebih cepat dalam proses pemenuhan pesanan.</li>
-            <li>
-              Dan lebih adaptif terhadap tren yang berkembang di lingkungan
-              kampus.
-            </li>
+            Dsavee didirikan pada tahun 2025 oleh sekumpulan orang yang melihat
+            tingginya kebutuhan akan stiker unik dan terjangkau. Pembelian dari
+            toko online luar daerah sering kali membutuhkan waktu lama dan tidak
+            sesuai dengan preferensi desain lokal.
           </p>
           <p className="text-muted">
-            Berawal dari pemesanan berbasismedia sosial, kini Dsavee berkembang
-            menjadi platform e-commerce dengan sistem pemesanan yang lebih
-            profesional dan terstruktur.
+            Melihat peluang tersebut, Dsavee hadir sebagai solusi yang:
           </p>
+          <ul className="text-muted" style={{ marginLeft: "1rem" }}>
+            <li>Lebih dekat dengan kebutuhan pelanggan, lebih luas</li>
+            <li>Lebih cepat dalam proses pemenuhan pesanan</li>
+            <li>Lebih adaptif terhadap tren perkembangan desain stiker</li>
+          </ul>
         </div>
 
         <div className="col-md-5">
@@ -108,11 +122,10 @@ export default function AboutUs() {
             <div className="card h-100 border-0 shadow-sm p-3">
               <h5>Visi</h5>
               <p className="text-muted mb-0">
-                Menjadi platform stiker terpercaya bagi mahasiswa dan pelanggan
-                di sekitar wilayah kami dengan menyediakan produk kreatif
-                berkualitas, proses belanja yang praktis, serta pertumbuhan
-                layanan yang berkelanjutan untuk menjangkau lebih banyak
-                pengguna ke depannya.
+                Menjadi platform jual stiker terpercaya di wilayah Airmadidi
+                dengan menyediakan produk kreatif berkualitas, proses belanja
+                yang praktis, serta pertumbuhan layanan yang berkelanjutan untuk
+                menjangkau lebih banyak pengguna ke depannya.
               </p>
             </div>
           </div>
@@ -123,11 +136,11 @@ export default function AboutUs() {
               <ul className="text-muted mb-0">
                 <li>
                   Membuat semua orang bisa mengekspresikan diri dengan cara yang
-                  mudah dan menyenangkan — melalui stiker!
+                  mudah dan menyenangkan melalui stiker!
                 </li>
                 <li>
                   Menyediakan beragam pilihan stiker yang relevan dengan tren
-                  dan kebutuhan mahasiswa.
+                  dan kebutuhan pelanggan.
                 </li>
                 <li>
                   Menghadirkan pengalaman belanja yang efisien dan nyaman bagi
@@ -150,13 +163,11 @@ export default function AboutUs() {
       <section className="mb-5">
         <h3>Lokasi & Jangkauan Layanan</h3>
         <p className="text-muted">
-          Kantor pusat kami berada di: <strong>Manado, Indonesia</strong>. Saat
-          ini kami melayani pengiriman di wilayah Airmadidi saja.
+          Kantor pusat kami berada di: <strong>Airmadidi, Indonesia</strong>.
         </p>
 
         <div className="row mt-3">
           <div className="col-md-6">
-            {/* Google Maps iframe (ganti src sesuai lokasi nyata) */}
             <div className="ratio ratio-16x9 rounded overflow-hidden shadow-sm">
               <iframe
                 title="Dsavee Location"
@@ -189,14 +200,16 @@ export default function AboutUs() {
             <div className="card border-0 shadow-sm p-3">
               <h6>Email</h6>
               <p className="mb-0">
-                <a href="mailto:hello@dsavee.com">dsaveesticker@gmail.com</a>
+                <a href="mailto:dsaveesticker@gmail.com">
+                  dsaveesticker@gmail.com
+                </a>
               </p>
             </div>
           </div>
 
           <div className="col-md-4">
             <div className="card border-0 shadow-sm p-3">
-              <h6>Telepon / WA</h6>
+              <h6>Telepon</h6>
               <p className="mb-0">
                 <a href="tel:+6281234567890">+62 812-3456-7890</a>
               </p>
@@ -205,14 +218,26 @@ export default function AboutUs() {
 
           <div className="col-md-4">
             <div className="card border-0 shadow-sm p-3">
-              <h6>Media Sosial Instagram</h6>
+              <h6>Media Sosial</h6>
               <p className="mb-0">
                 <a
                   href="https://instagram.com/dsavee"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
+                  aria-label="Instagram @dsavee"
+                  className="me-3"
                 >
-                  @dsaveesticker
+                  @dsavee
+                </a>
+
+                <a
+                  href="https://www.tiktok.com/@dsavee"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="TikTok @dsavee"
+                  className="ms-2"
+                >
+                  @dsavee
                 </a>
               </p>
             </div>

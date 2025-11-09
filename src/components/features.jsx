@@ -75,7 +75,7 @@ const features = [
   },
   {
     title: "Daily offers",
-    text: "Dapatkan diskon dan koleksi stiker baru setiap hari, jangan sampai kehabisan!",
+    text: "Dapatkan diskon dan koleksi stiker baru setiap minggu, jangan sampai kehabisan!",
     icon: (
       <svg
         xmlns="http://www.w3.org/2000/svg"

@@ -19,9 +19,7 @@ export default function ProductGrid({
   );
   // Produk yang akan ditampilkan (setelah filter)
   const [displayProducts, setDisplayProducts] = useState(
-    Array.isArray(productsProp) && productsProp.length > 0
-      ? productsProp
-      : DEFAULT_PRODUCTS
+    Array.isArray(productsProp) && productsProp.length > 0 ? productsProp : []
   );
   const [loading, setLoading] = useState(productsProp ? false : true);
 
@@ -72,14 +70,15 @@ export default function ProductGrid({
             : Object.keys(data).map((key) => ({ id: key, ...data[key] }));
           setAllProducts(list);
         } else {
-          console.log("No data available at 'products' path");
-          setAllProducts(DEFAULT_PRODUCTS);
+          // Jika path products kosong -> jangan pakai fallback default, gunakan array kosong
+          setAllProducts([]);
         }
         setLoading(false);
       },
       (error) => {
         console.error("Firebase onValue error:", error);
-        setAllProducts(DEFAULT_PRODUCTS);
+        // pada error -> tampilkan list kosong (user akan melihat pesan "Tidak ada produk...")
+        setAllProducts([]);
         setLoading(false);
       }
     );
@@ -95,10 +94,10 @@ export default function ProductGrid({
       ? String(filterKeyword).toLowerCase().trim()
       : null;
     if (!fk) {
-      // no filter -> tampilkan semua (atau fallback)
+      // no filter -> tampilkan semua (atau kosong jika tidak ada produk)
       if (Array.isArray(allProducts) && allProducts.length > 0)
         setDisplayProducts(allProducts);
-      else setDisplayProducts(DEFAULT_PRODUCTS);
+      else setDisplayProducts([]);
       return;
     }
 
@@ -118,7 +117,11 @@ export default function ProductGrid({
 
       {!loading && displayProducts.length === 0 && (
         <div className="text-center py-4 text-muted">
-          <p>Tidak ada produk ditemukan untuk filter "{filterKeyword}".</p>
+          {filterKeyword ? (
+            <p>Tidak ada produk ditemukan untuk filter "{filterKeyword}".</p>
+          ) : (
+            <p>Tidak ada produk tersedia saat ini.</p>
+          )}
         </div>
       )}
 
@@ -132,23 +135,3 @@ export default function ProductGrid({
     </div>
   );
 }
-
-// fallback sample product(s)
-const DEFAULT_PRODUCTS = [
-  {
-    id: "p1",
-    name: "Sunstar Fresh Melon Juice",
-    price: 18.0,
-    image: "/images/thumb-bananas.png",
-    size: "500ml",
-    keyword: "food",
-  },
-  {
-    id: "p2",
-    name: "Cute Sticker Pack",
-    price: 12.5,
-    image: "/images/thumb-biscuits.png",
-    size: "5 x 5 cm",
-    keyword: "cute,anime",
-  },
-];

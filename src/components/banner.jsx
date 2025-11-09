@@ -75,35 +75,8 @@ export default function Banner() {
     };
   }, []);
 
-  function getFallbackSlides() {
-    return [
-      {
-        id: "fallback-1",
-        tagline: "100% natural",
-        title: "Fresh Smoothie & Summer Juice",
-        description:
-          "Konten fallback - periksa konfigurasi Realtime DB atau rules.",
-        image: "/images/product-thumb-1.png",
-      },
-      {
-        id: "fallback-2",
-        tagline: "20% off",
-        title: "Fruits & Vegetables",
-        image: "/images/ad-image-1.png",
-      },
-      {
-        id: "fallback-3",
-        tagline: "15% off",
-        title: "Baked Products",
-        image: "/images/ad-image-2.png",
-      },
-    ];
-  }
-
-  const slidesToRender = (
-    banners && banners.length ? banners : getFallbackSlides()
-  ).slice(0, 3);
-  const fallback = getFallbackSlides();
+  const slidesToRender = (banners && banners.length ? banners : []).slice(0, 3);
+  const fallback = [];
   const block2Data =
     (banners &&
       banners.find((b) => String(b.id).toLowerCase() === "banner-4")) ||
@@ -244,11 +217,9 @@ export default function Banner() {
                   <div className="row banner-content p-5">
                     <div className="content-wrapper col-md-7">
                       <div className="categories sale mb-3 pb-3">
-                        {block2Data?.tagline || "20% off"}
+                        {block2Data?.tagline}
                       </div>
-                      <h3 className="banner-title">
-                        {block2Data?.title || "Fruits & Vegetables"}
-                      </h3>
+                      <h3 className="banner-title">{block2Data?.title}</h3>
                     </div>
                   </div>
                 )}
@@ -273,11 +244,9 @@ export default function Banner() {
                   <div className="row banner-content p-5">
                     <div className="content-wrapper col-md-7">
                       <div className="categories sale mb-3 pb-3">
-                        {block3Data?.tagline || "15% off"}
+                        {block3Data?.tagline}
                       </div>
-                      <h3 className="item-title">
-                        {block3Data?.title || "Baked Products"}
-                      </h3>
+                      <h3 className="item-title">{block3Data?.title}</h3>
                     </div>
                   </div>
                 )}
