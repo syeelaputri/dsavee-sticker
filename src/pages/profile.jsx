@@ -1,7 +1,13 @@
+// src/pages/profile.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { getDatabase, ref, get, set, update } from "firebase/database";
 import { useNavigate, Link } from "react-router-dom";
-import { getAuth, onAuthStateChanged, updateProfile } from "firebase/auth";
+import {
+  getAuth,
+  onAuthStateChanged,
+  updateProfile,
+  updatePassword,
+} from "firebase/auth";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -13,7 +19,7 @@ export default function Profile() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
-  const prevAuthRef = useRef(null); // track previous auth state to detect logout transition
+  const prevAuthRef = useRef(null);
 
   const [editForm, setEditForm] = useState({
     name: "",
@@ -55,16 +61,10 @@ export default function Profile() {
     const db = getDatabase();
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      // set loading flag for initial mount
       setAuthLoading(false);
 
-      // Detect transition logged-in -> logged-out
-      // prevAuthRef.current holds the previous auth user (null or object)
-      // If previously logged in (truthy) and now currentUser is null => user logged out.
       try {
         if (prevAuthRef.current && !currentUser) {
-          // Only redirect to homepage if the user was previously logged in.
-          // Also make sure we only redirect if user currently is on profile page.
           if (
             typeof window !== "undefined" &&
             window.location.pathname === "/profile"
@@ -73,11 +73,9 @@ export default function Profile() {
           }
         }
       } catch (err) {
-        // ignore navigation errors
         console.warn("Error checking logout transition:", err);
       }
 
-      // update prev ref for next callback
       prevAuthRef.current = currentUser;
 
       if (currentUser) {
@@ -93,7 +91,6 @@ export default function Profile() {
           const snap = await get(userRef);
 
           if (!snap.exists()) {
-            // buat default record di RTDB
             await set(userRef, {
               uid: currentUser.uid,
               email: currentUser.email || "",
@@ -104,11 +101,9 @@ export default function Profile() {
               updatedAt: Date.now(),
             });
           } else {
-            // update hanya updatedAt
             await update(userRef, { updatedAt: Date.now() });
           }
 
-          // ambil ulang data user dari RTDB
           const fresh = await get(userRef);
           const userData = fresh.exists() ? fresh.val() : {};
           setEditForm({
@@ -123,7 +118,6 @@ export default function Profile() {
 
         setHistory(sampleHistory);
       } else {
-        // guest
         setUser(null);
         setHistory(sampleHistory);
         setLoading(false);
@@ -131,9 +125,10 @@ export default function Profile() {
     });
 
     return () => unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [auth, navigate]);
 
+  // =========================================================
+  // HANDLER FUNCTIONS
   const handleLogin = () => navigate("/login");
   const handleSignup = () => navigate("/signup");
 
@@ -145,9 +140,45 @@ export default function Profile() {
     setIsEditing(!isEditing);
   };
 
+  // Sanitize input: if name === 'phone' => keep only digits, max length 15
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setEditForm((prev) => ({ ...prev, [name]: value }));
+    if (name === "phone") {
+      // remove all non-digit characters
+      const digits = String(value).replace(/\D/g, "");
+      // optional: limit length to 15 (international-ish)
+      const limited = digits.slice(0, 15);
+      setEditForm((prev) => ({ ...prev, phone: limited }));
+    } else {
+      setEditForm((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  // Prevent paste of non-digit characters into phone field
+  const handlePhonePaste = (e) => {
+    const paste = (e.clipboardData || window.clipboardData).getData("text");
+    const digits = String(paste).replace(/\D/g, "");
+    if (digits !== paste) {
+      // If paste contains non-digits, replace clipboard content with digits only
+      e.preventDefault();
+      // insert sanitized digits at cursor position
+      const input = e.target;
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      const newVal =
+        input.value.slice(0, start) +
+        digits.slice(0, 15 - input.value.length) +
+        input.value.slice(end);
+      // update state and set cursor after inserted digits
+      setEditForm((prev) => ({ ...prev, phone: newVal.slice(0, 15) }));
+      // setTimeout to move cursor (DOM update)
+      setTimeout(() => {
+        try {
+          input.selectionStart = input.selectionEnd = start + digits.length;
+        } catch {}
+      }, 0);
+    }
+    // else allow natural paste (digits only)
   };
 
   const handleSaveProfile = async () => {
@@ -156,18 +187,29 @@ export default function Profile() {
       return;
     }
 
+    // validate phone: either empty or digits only
+    const phone = editForm.phone ? String(editForm.phone).trim() : "";
+    if (phone && !/^\d{3,15}$/.test(phone)) {
+      // require between 3 and 15 digits if not empty (adjust as needed)
+      alert(
+        "Nomor telepon harus berupa angka (3-15 digit). Contoh: 081234567890"
+      );
+      return;
+    }
+
     try {
-      // update Firebase Auth displayName jika berubah
       if (auth.currentUser) {
-        await updateProfile(auth.currentUser, { displayName: editForm.name });
+        // update displayName if changed
+        if (typeof editForm.name === "string") {
+          await updateProfile(auth.currentUser, { displayName: editForm.name });
+        }
       }
 
-      // update Realtime Database
       const db = getDatabase();
       const userRef = ref(db, `users/${user.uid}`);
       await update(userRef, {
         name: editForm.name,
-        phone: editForm.phone,
+        phone: phone,
         address: editForm.address,
         email: editForm.email,
         updatedAt: Date.now(),
@@ -178,6 +220,34 @@ export default function Profile() {
     } catch (err) {
       console.error("Error updating profile (RTDB):", err);
       alert("Error updating profile. Please try again.");
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!user) return alert("Silakan login terlebih dahulu.");
+
+    const provider = user.providerData[0]?.providerId;
+
+    if (provider !== "password") {
+      alert(
+        "Akun ini menggunakan Google Sign-In. Silakan ubah password melalui akun Google Anda."
+      );
+      return;
+    }
+
+    const newPassword = prompt("Masukkan password baru:");
+    if (!newPassword) return;
+
+    try {
+      await updatePassword(user, newPassword);
+      alert("Password berhasil diubah!");
+    } catch (error) {
+      console.error("Gagal ubah password:", error);
+      if (error.code === "auth/requires-recent-login") {
+        alert("Silakan login ulang sebelum mengubah password.");
+      } else {
+        alert("Terjadi kesalahan. Coba lagi nanti.");
+      }
     }
   };
 
@@ -197,8 +267,19 @@ export default function Profile() {
       </div>
     );
 
+  // =========================================================
+  // UI
   return (
     <div className="container my-5">
+      {/* Inline style block for placeholder transparency */}
+      <style>{`
+        /* make phone placeholder slightly more transparent */
+        input[name="phone"]::placeholder {
+          color: rgba(0,0,0,0.45);
+          opacity: 0.5;
+        }
+      `}</style>
+
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
@@ -210,7 +291,7 @@ export default function Profile() {
           </p>
         </div>
         <div>
-          {user ? null : (
+          {!user ? (
             <>
               <button className="btn btn-primary me-2" onClick={handleLogin}>
                 Login
@@ -222,7 +303,7 @@ export default function Profile() {
                 Sign Up
               </button>
             </>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -272,10 +353,15 @@ export default function Profile() {
                   <label className="form-label">Phone Number</label>
                   <input
                     type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={15}
                     className="form-control"
                     name="phone"
                     value={editForm.phone}
                     onChange={handleInputChange}
+                    onPaste={handlePhonePaste}
+                    placeholder="08xxxxxxxxxx"
                   />
                 </div>
                 <div className="col-md-6 mb-3">
@@ -329,85 +415,9 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* Recent Orders Preview */}
-      <div className="card mb-4">
-        <div className="card-body">
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <h5 className="card-title mb-0">Pesanan Terbaru</h5>
-            {!user && <span className="badge bg-info">Sample Data</span>}
-          </div>
-
-          {loading ? (
-            <div className="text-center py-4">
-              <div className="spinner-border text-primary" role="status"></div>
-              <p className="mt-2">Loading order history...</p>
-            </div>
-          ) : history.length > 0 ? (
-            <div className="table-responsive">
-              <table className="table table-striped">
-                <thead className="table-dark">
-                  <tr>
-                    <th>Order ID</th>
-                    <th>Products</th>
-                    <th>Total Amount</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.slice(0, 3).map((order) => (
-                    <tr key={order.id}>
-                      <td>#{order.id?.slice(-6) || order.id}</td>
-                      <td>
-                        {order.items?.map((i) => i.name).join(", ") || "N/A"}
-                      </td>
-                      <td>Rp {order.totalAmount?.toLocaleString() || "0"}</td>
-                      <td>{formatDate(order.createdAt)}</td>
-                      <td>
-                        <span
-                          className={`badge ${
-                            order.status === "delivered"
-                              ? "bg-success"
-                              : order.status === "processing"
-                              ? "bg-warning"
-                              : order.status === "shipped"
-                              ? "bg-info"
-                              : order.status === "cancelled"
-                              ? "bg-danger"
-                              : "bg-secondary"
-                          }`}
-                        >
-                          {order.status || "Unknown"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {history.length > 3 && (
-                <div className="text-center mt-3">
-                  <Link to="/orders" className="btn btn-outline-primary">
-                    Lihat {history.length - 3} Pesanan Lainnya
-                  </Link>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-4">
-              <p className="text-muted">No purchase history found.</p>
-              <button
-                className="btn btn-primary"
-                onClick={() => navigate("/products")}
-              >
-                Start Shopping
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Quick Actions */}
       <div className="row mt-4">
+        {/* Change Password */}
         <div className="col-md-4 mb-3">
           <div className="card text-center">
             <div className="card-body">
@@ -415,14 +425,18 @@ export default function Profile() {
               <p className="card-text">Secure your account</p>
               <button
                 className="btn btn-outline-primary"
-                onClick={handleLogin}
-                disabled={!user}
+                onClick={handleChangePassword}
+                disabled={
+                  !user || user.providerData[0]?.providerId !== "password"
+                }
               >
-                {user ? "Change" : "Login to Change"}
+                Change
               </button>
             </div>
           </div>
         </div>
+
+        {/* Order Tracking */}
         <div className="col-md-4 mb-3">
           <div className="card text-center">
             <div className="card-body">
@@ -434,6 +448,8 @@ export default function Profile() {
             </div>
           </div>
         </div>
+
+        {/* Help Center */}
         <div className="col-md-4 mb-3">
           <div className="card text-center">
             <div className="card-body">

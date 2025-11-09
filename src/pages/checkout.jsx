@@ -1,4 +1,7 @@
+// src/pages/checkout.jsx
 import React, { useState, useEffect, useRef } from "react";
+
+// Realtime Database (backend logic)
 import {
   getDatabase,
   ref as dbRef,
@@ -8,11 +11,16 @@ import {
   serverTimestamp,
   onValue,
   get,
-  runTransaction,
 } from "firebase/database";
+
+// Auth
 import { getAuth, onAuthStateChanged } from "firebase/auth";
+
+// PDF
 import { jsPDF } from "jspdf";
 import "jspdf";
+
+// Cart context (sesuaikan path jika berbeda)
 import { useCartState, useCartDispatch } from "../contexts/index";
 
 const colors = {
@@ -26,32 +34,43 @@ const colors = {
 };
 
 export default function Checkout() {
+  // form fields
   const [customerName, setCustomerName] = useState("");
   const [address, setAddress] = useState("");
+  // phone hanya angka
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+
+  // payment states — hanya 'cod' dan 'midtrans'
   const [paymentMethod, setPaymentMethod] = useState("cod");
+
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+
+  // states untuk PDF + success screen
   const [orderCompleted, setOrderCompleted] = useState(false);
   const [orderData, setOrderData] = useState(null);
 
   const { items: ctxItems = [] } = useCartState();
   const dispatch = useCartDispatch();
 
-  const [remoteCartItems, setRemoteCartItems] = useState(null);
+  // --- NEW: remote cart (RTDB) listener ---
+  const [remoteCartItems, setRemoteCartItems] = useState(null); // null = not loaded yet
   const [authUser, setAuthUser] = useState(null);
 
+  // helper to normalize snapshot value to array of items
   const snapshotToArray = (val) => {
     if (!val) return [];
     if (Array.isArray(val)) {
+      // arr might contain null slots — filter
       return val
-        .map((it) => (it && typeof it === "object" ? { ...it } : null))
+        .map((it, idx) => (it && typeof it === "object" ? { ...it } : null))
         .filter(Boolean);
     }
     if (typeof val === "object") {
       return Object.entries(val)
         .map(([key, v]) => {
+          // filter out meta fields (createdAt, updatedAt, email, name, uid)
           if (!v || typeof v !== "object") return null;
           const looksLikeItem =
             "id" in v || "name" in v || "price" in v || "qty" in v;
@@ -67,45 +86,56 @@ export default function Checkout() {
     const auth = getAuth();
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
       setAuthUser(u || null);
+
+      // reset remoteCartItems when auth changes; keep null until loaded
       setRemoteCartItems(null);
 
       if (u && u.uid) {
         try {
           const db = getDatabase();
           const cartRef = dbRef(db, `users/${u.uid}/cart`);
+
+          // listen realtime cart for logged-in user
           const off = onValue(
             cartRef,
             (snap) => {
               const val = snap.val();
               const arr = snapshotToArray(val);
+              // arr is array of cart item objects (or [] if none)
               setRemoteCartItems(arr);
             },
             (err) => {
               console.error("Error listening to user cart:", err);
-              setRemoteCartItems([]);
+              setRemoteCartItems([]); // fail-safe
             }
           );
 
+          // also try to prefill customer data from users/{uid} profile if exists
           try {
             const userRef = dbRef(db, `users/${u.uid}`);
             const userSnap = await get(userRef);
             if (userSnap.exists()) {
               const ud = userSnap.val();
               if (!customerName && ud.name) setCustomerName(ud.name);
-              if (!phone && ud.phone) setPhone(ud.phone);
+              // sanitize phone: hanya angka
+              if (!phone && ud.phone)
+                setPhone(String(ud.phone).replace(/\D/g, ""));
               if (!email && ud.email) setEmail(ud.email);
               if (!address && ud.address) setAddress(ud.address);
             }
           } catch (prefillErr) {
-            // ignore
+            // ignore prefill errors
+            // console.warn("prefill user data failed:", prefillErr);
           }
 
+          // cleanup when unmount or auth change
           return () => off();
         } catch (err) {
           console.error("setup cart listener failed:", err);
-          setRemoteCartItems([]);
+          setRemoteCartItems([]); // fail-safe
         }
       } else {
+        // guest: no remote cart
         setRemoteCartItems(null);
       }
     });
@@ -118,8 +148,11 @@ export default function Checkout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // choose source items: prefer remoteCartItems when it's loaded (not null),
+  // otherwise fallback to context items (guest or not-yet-loaded remote)
   const sourceItems = remoteCartItems !== null ? remoteCartItems : ctxItems;
 
+  // Normalisasi items (pakai sourceItems)
   const normalizedItems = (sourceItems || []).map((it, idx) => ({
     id: it.id ?? it.productId ?? `i-${idx}`,
     productId: it.productId ?? it.id ?? `product-${idx}`,
@@ -128,16 +161,16 @@ export default function Checkout() {
     qty: Number(it.qty) || Number(it.quantity) || 1,
     size: it.size ?? it.sizeName ?? "",
     image: it.image ?? null,
-    variant: it.variant ?? null,
   }));
 
   const subtotal = normalizedItems.reduce(
     (s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 1),
     0
   );
-  const shippingCost = 10000;
+  const shippingCost = 0;
   const total = subtotal + shippingCost;
 
+  // Draft id (opsional)
   const draftIdRef = useRef(null);
   useEffect(() => {
     let draftId = localStorage.getItem("dsavee_orderDraftId");
@@ -150,6 +183,7 @@ export default function Checkout() {
     draftIdRef.current = draftId;
   }, []);
 
+  // Muat skrip Midtrans Snap secara dinamis
   useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://app.sandbox.midtrans.com/snap/snap.js";
@@ -159,14 +193,17 @@ export default function Checkout() {
     return () => {
       try {
         document.body.removeChild(script);
-      } catch {}
+      } catch (e) {}
     };
   }, []);
 
+  // Simple validation (dipakai sebelum submit)
   const validateForm = () => {
     if (!customerName.trim()) return "Masukkan nama penerima.";
     if (!address.trim()) return "Masukkan alamat pengiriman.";
     if (!phone.trim()) return "Masukkan nomor HP.";
+    // pastikan hanya angka
+    if (!/^\d+$/.test(phone)) return "Nomor HP hanya boleh berupa angka.";
     if (!email.trim()) return "Masukkan email.";
     if (normalizedItems.length === 0) return "Keranjang kosong.";
     return null;
@@ -182,216 +219,46 @@ export default function Checkout() {
     }
   };
 
-  // ---------- helpers untuk stok sesuai struktur DB ----------
-  const getBaseProductId = (maybeCompositeId) => {
-    if (!maybeCompositeId) return maybeCompositeId;
-    if (
-      typeof maybeCompositeId === "string" &&
-      maybeCompositeId.includes("::")
-    ) {
-      return maybeCompositeId.split("::")[0];
-    }
-    return maybeCompositeId;
-  };
-
-  const determineStockField = (productObj, item) => {
-    if (item.productId && typeof item.productId === "string") {
-      if (
-        item.productId.includes("image1") ||
-        item.productId.includes("image=1")
-      )
-        return "stock1";
-      if (
-        item.productId.includes("image2") ||
-        item.productId.includes("image=2")
-      )
-        return "stock2";
-    }
-
-    if (item.image) {
-      if (productObj.image && productObj.image === item.image) return "stock";
-      if (productObj.image1 && productObj.image1 === item.image)
-        return "stock1";
-      if (productObj.image2 && productObj.image2 === item.image)
-        return "stock2";
-    }
-
-    if (item.size) {
-      if (
-        productObj.size !== undefined &&
-        String(productObj.size) === String(item.size)
-      )
-        return "stock";
-      if (
-        productObj.size1 !== undefined &&
-        String(productObj.size1) === String(item.size)
-      )
-        return "stock1";
-      if (
-        productObj.size2 !== undefined &&
-        String(productObj.size2) === String(item.size)
-      )
-        return "stock2";
-    }
-
-    if (item.variant !== null && item.variant !== undefined) {
-      const idx = Number(item.variant);
-      if (idx === 0) return "stock";
-      if (idx === 1) return "stock1";
-      if (idx === 2) return "stock2";
-    }
-
-    if (productObj.hasOwnProperty("stock")) return "stock";
-    if (productObj.hasOwnProperty("stock1")) return "stock1";
-    if (productObj.hasOwnProperty("stock2")) return "stock2";
-    return "stock";
-  };
-
-  // Versi perbaikan: aggregate dulu, pre-check, lalu lakukan transaksi per field
-  const decrementStocks = async (items) => {
-    const db = getDatabase();
-
-    // 1) kumpulkan base product ids
-    const baseIds = Array.from(
-      new Set(
-        (items || [])
-          .map((it) => getBaseProductId(it.productId || it.id))
-          .filter(Boolean)
-      )
-    );
-
-    // 2) ambil snapshot semua product sekaligus (parallel)
-    const productMap = {}; // pid -> productVal
-    await Promise.all(
-      baseIds.map(async (pid) => {
-        const snap = await get(dbRef(db, `products/${pid}`));
-        if (!snap.exists()) {
-          throw new Error(`Produk tidak ditemukan di DB: ${pid}`);
-        }
-        productMap[pid] = snap.val();
-      })
-    );
-
-    // 3) tentukan field per item dan aggregate qty per (pid,field)
-    const agg = {}; // key "pid::field" -> { pid, field, needed }
-    for (const it of items) {
-      const rawPid = it.productId || it.id;
-      const basePid = getBaseProductId(rawPid);
-      if (!basePid) throw new Error(`productId missing for item ${it.name}`);
-
-      const productVal = productMap[basePid];
-      if (!productVal) throw new Error(`Produk tidak ditemukan: ${basePid}`);
-
-      const field = determineStockField(productVal, it);
-      const key = `${basePid}::${field}`;
-      const qtyToReduce = Number(it.qty) || 1;
-      if (!agg[key])
-        agg[key] = { pid: basePid, field, needed: 0, nameList: [] };
-      agg[key].needed += qtyToReduce;
-      agg[key].nameList.push({ name: it.name, qty: qtyToReduce });
-    }
-
-    // 4) PRE-CHECK semua stok cukup (gunakan productMap)
-    const deficits = [];
-    for (const k of Object.keys(agg)) {
-      const { pid, field, needed } = agg[k];
-      const productVal = productMap[pid];
-      const current = Number(productVal[field]) || 0;
-      console.log(
-        `[pre-check] ${pid}/${field} available=${current} needed=${needed}`
-      );
-      if (current < needed) {
-        deficits.push({ pid, field, available: current, needed });
-      }
-    }
-
-    if (deficits.length > 0) {
-      // buat pesan yang jelas
-      const lines = deficits.map(
-        (d) =>
-          `Produk ${d.pid} (${d.field}) tersedia: ${d.available}, dibutuhkan: ${d.needed}`
-      );
-      throw new Error("Stok tidak mencukupi:\n" + lines.join("\n"));
-    }
-
-    // 5) Jika pre-check oke, lakukan runTransaction per field (atomic per-node)
-    const succeeded = [];
-    try {
-      for (const k of Object.keys(agg)) {
-        const { pid, field, needed } = agg[k];
-        const targetRef = dbRef(db, `products/${pid}/${field}`);
-        // jalankan transaction: kurangi needed (tidak melempar error di dalam)
-        const result = await runTransaction(targetRef, (current) => {
-          const cur = Number(current) || 0;
-          // double-check safety: jika cur < needed -> abort transaction (return current unchanged)
-          if (cur < needed) {
-            // return undefined untuk abort => transaction tidak committed
-            return; // abort, transaction will result with committed=false
-          }
-          return cur - needed;
-        });
-
-        if (!result.committed) {
-          // gagal commit (mungkin karena data berubah antara pre-check dan commit)
-          throw new Error(
-            `Gagal mengurangi stok untuk ${pid}/${field} (konflik concurrency).`
-          );
-        }
-        succeeded.push({ pid, field, qty: needed });
-      }
-
-      // semua sukses
-      return { ok: true };
-    } catch (err) {
-      console.error("decrementStocks error - rolling back:", err);
-      // rollback best-effort untuk yang sudah berhasil
-      try {
-        for (const s of succeeded) {
-          const rr = dbRef(getDatabase(), `products/${s.pid}/${s.field}`);
-          await runTransaction(rr, (current) => {
-            const cur = Number(current) || 0;
-            return cur + s.qty;
-          });
-        }
-      } catch (rbErr) {
-        console.error("Rollback failed:", rbErr);
-      }
-      throw err;
-    }
-  };
-
-  // PDF generator (sama)
+  // PDF generator (sederhanakan bagian payment)
   const generateReceiptPDF = (order) => {
     try {
       if (!order) {
         alert("Data order tidak tersedia untuk membuat struk");
         return;
       }
+
       const doc = new jsPDF();
+      // Header
       doc.setFontSize(20);
       doc.setTextColor(11, 25, 87);
       doc.text("DSAVEE STICKER", 105, 20, null, null, "center");
+
       doc.setFontSize(12);
       doc.setTextColor(100, 100, 100);
       doc.text("Struk Pembelian", 105, 30, null, null, "center");
+
       doc.setDrawColor(158, 204, 250);
       doc.line(20, 35, 190, 35);
 
+      // Order meta
       doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
       doc.text(`No. Order: ${order.txId || "N/A"}`, 20, 45);
       doc.text(`Tanggal: ${new Date().toLocaleDateString("id-ID")}`, 20, 52);
       doc.text(`Waktu: ${new Date().toLocaleTimeString("id-ID")}`, 20, 59);
 
+      // Customer
       doc.text(`Nama: ${order.customerName || "N/A"}`, 20, 71);
       doc.text(`Telepon: ${order.phone || "N/A"}`, 20, 78);
       doc.text(`Email: ${order.email || "N/A"}`, 20, 85);
 
+      // Alamat (wrap)
       const addressText = `Alamat: ${order.address || "N/A"}`;
       const addressLines = doc.splitTextToSize(addressText, 170);
       doc.text(addressLines, 20, 92);
       let startY = 92 + addressLines.length * 5;
 
+      // Payment method
       doc.text(
         `Metode Pembayaran: ${(order.paymentMethod || "N/A").toUpperCase()}`,
         20,
@@ -399,9 +266,12 @@ export default function Checkout() {
       );
       startY += 14;
 
+      // Items (manual table)
       const tableRows = order.items || [];
       if (tableRows.length > 0) {
         let tableY = startY + 10;
+
+        // header
         doc.setFillColor(11, 25, 87);
         doc.setTextColor(255, 255, 255);
         doc.rect(20, tableY, 170, 8, "F");
@@ -410,6 +280,7 @@ export default function Checkout() {
         doc.text("Qty", 110, tableY + 6);
         doc.text("Harga", 125, tableY + 6);
         doc.text("Subtotal", 155, tableY + 6);
+
         doc.setTextColor(0, 0, 0);
         tableY += 12;
 
@@ -431,9 +302,11 @@ export default function Checkout() {
           doc.line(20, tableY + 3, 190, tableY + 3);
           tableY += 10;
         });
+
         startY = tableY;
       }
 
+      // Total
       const finalY = startY + 10;
       doc.setFontSize(12);
       doc.setFont(undefined, "bold");
@@ -443,6 +316,7 @@ export default function Checkout() {
         finalY
       );
 
+      // Notes
       doc.setFontSize(9);
       doc.setFont(undefined, "normal");
       doc.setTextColor(100, 100, 100);
@@ -482,7 +356,7 @@ export default function Checkout() {
     }
   };
 
-  // ---------- handleSubmit (sama flow tapi stok dikurangi sebelum konfirmasi akhir) ----------
+  // Handle submit: integrasi Midtrans Snap + RTDB + PDF
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
@@ -496,10 +370,12 @@ export default function Checkout() {
     const db = getDatabase();
     let orderId = null;
     try {
+      // Buat entry order baru di Firebase RTDB (global orders)
       const ordersRef = dbRef(db, "orders");
       const newOrderRef = push(ordersRef);
       orderId = newOrderRef.key;
 
+      // Susun order object awal (sederhana, hanya field yang relevan)
       const orderObj = {
         orderId,
         customerName,
@@ -527,8 +403,10 @@ export default function Checkout() {
         },
       };
 
+      // Simpan order awal ke Firebase
       await set(newOrderRef, orderObj);
 
+      // ALSO: save order under users/{uid}/orders if user is logged in
       try {
         if (authUser && authUser.uid) {
           const userOrderRef = dbRef(
@@ -551,35 +429,7 @@ export default function Checkout() {
         );
       }
 
-      setMessage("Memeriksa dan mengurangi stok produk...");
-      try {
-        await decrementStocks(normalizedItems);
-      } catch (stockErr) {
-        console.error("Stok tidak mencukupi atau error:", stockErr);
-        try {
-          await update(dbRef(db, `orders/${orderId}`), {
-            status: "failed_stock",
-            updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
-            "payment/status": "failed",
-            "payment/failureReason": stockErr.message || "Stok tidak mencukupi",
-          });
-          if (authUser && authUser.uid) {
-            await update(dbRef(db, `users/${authUser.uid}/orders/${orderId}`), {
-              status: "failed_stock",
-              failureReason: stockErr.message || "",
-            });
-          }
-        } catch (uErr) {
-          console.error("Gagal update order setelah stock error:", uErr);
-        }
-        alert(
-          "Checkout gagal: " + (stockErr.message || "Stok tidak mencukupi")
-        );
-        setSubmitting(false);
-        setMessage("Stok tidak mencukupi. Order dibatalkan.");
-        return;
-      }
-
+      // Hapus draft jika ada
       if (draftIdRef.current) {
         try {
           await set(dbRef(db, `orderDrafts/${draftIdRef.current}`), null);
@@ -589,31 +439,22 @@ export default function Checkout() {
         }
       }
 
+      // Jika metode pembayaran COD (Cash on Delivery)
       if (paymentMethod === "cod") {
+        // Proses COD (tanpa Midtrans)
         const txId = `COD-${Date.now().toString(36)}-${Math.random()
           .toString(36)
           .slice(2, 5)}`;
         await update(dbRef(db, `orders/${orderId}`), {
           "payment/txId": txId,
           txId,
-          status: "confirmed",
-          "payment/status": "confirmed",
           updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
         });
 
-        if (authUser && authUser.uid) {
-          try {
-            await update(dbRef(db, `users/${authUser.uid}/orders/${orderId}`), {
-              status: "confirmed",
-              txId,
-            });
-          } catch (e) {
-            console.warn("Gagal update users/{uid}/orders untuk COD:", e);
-          }
-        }
-
+        // Kosongkan cart (context -> akan sinkron ke RTDB via CartProvider)
         dispatch({ type: "CLEAR_CART" });
 
+        // Siapkan data untuk struk PDF
         const orderForPdf = {
           txId,
           customerName,
@@ -637,7 +478,7 @@ export default function Checkout() {
         return;
       }
 
-      // Midtrans flow
+      // Non-COD: Gunakan Midtrans Snap (logika MIDTRANS tetap sama seperti awal)
       const snapParams = {
         transaction_details: {
           order_id: orderId,
@@ -651,12 +492,13 @@ export default function Checkout() {
         })),
         customer_details: {
           first_name: customerName,
-          email,
-          phone,
+          email: email,
+          phone: phone,
         },
       };
 
       setMessage("Menghubungkan ke Midtrans...");
+      // Panggil API Midtrans untuk token transaksi (gunakan Server Key di header)
       const tokenResponse = await fetch(
         "http://localhost:5000/api/create-midtrans",
         {
@@ -667,17 +509,24 @@ export default function Checkout() {
       );
 
       const tokenData = await tokenResponse.json();
+      console.log("Midtrans proxy response:", tokenResponse.status, tokenData);
+
       if (!tokenResponse.ok) {
         throw new Error(
-          `Gagal membuat transaksi Midtrans. (${tokenResponse.status})`
+          `Gagal membuat transaksi Midtrans. (${tokenResponse.status}) ${
+            tokenData && tokenData.error ? tokenData.error : ""
+          }`
         );
       }
+
       if (!tokenData || !tokenData.token) {
         throw new Error("Gagal mendapatkan token transaksi Midtrans");
       }
 
+      // Panggil snap.js untuk menampilkan UI pembayaran Midtrans
       window.snap.pay(tokenData.token, {
         onSuccess: async (result) => {
+          console.log("Midtrans success:", result);
           try {
             const midtransId = result.transaction_id;
             await update(dbRef(db, `orders/${orderId}`), {
@@ -688,6 +537,7 @@ export default function Checkout() {
               updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
             });
 
+            // Update users/{uid}/orders status (best-effort)
             if (authUser && authUser.uid) {
               await update(
                 dbRef(db, `users/${authUser.uid}/orders/${orderId}`),
@@ -718,9 +568,12 @@ export default function Checkout() {
           setOrderCompleted(true);
           setSubmitting(false);
           setMessage("Pembayaran berhasil!");
+
+          // PENTING: kembalikan false supaya Snap TIDAK melakukan redirect otomatis
           return false;
         },
         onPending: async (result) => {
+          console.log("Midtrans pending:", result);
           try {
             const midtransId = result.transaction_id;
             await update(dbRef(db, `orders/${orderId}`), {
@@ -761,6 +614,8 @@ export default function Checkout() {
           setOrderCompleted(true);
           setSubmitting(false);
           setMessage(`Order Berhasil Disimpan! ${getPaymentDeadline()}`);
+
+          // Cegah redirect default Snap
           return false;
         },
         onError: (result) => {
@@ -778,12 +633,13 @@ export default function Checkout() {
       });
     } catch (err) {
       console.error("Checkout error detail:", err);
-      alert("Terjadi error: " + (err.message || err));
+      alert("Terjadi error: " + err.message);
       setSubmitting(false);
       setMessage("Gagal menyimpan order. Silakan coba lagi.");
     }
   };
 
+  // Render input spesifik payment (hanya COD dan Midtrans)
   const renderPaymentInputs = () => {
     switch (paymentMethod) {
       case "midtrans":
@@ -813,7 +669,8 @@ export default function Checkout() {
                 menyelesaikan pembayaran.
               </strong>
               <br />
-              Ikuti instruksi di popup.
+              Ikuti instruksi di popup (bisa menggunakan QR, e-wallet, atau
+              virtual account tergantung pilihan di Midtrans).
             </div>
           </div>
         );
@@ -842,13 +699,14 @@ export default function Checkout() {
             >
               <strong>Pembayaran dilakukan ketika barang diterima</strong>
               <br />
-              Pastikan Anda berada di alamat tujuan saat pengiriman
+              Pastikan Anda akan berada di alamat yang dituju saat pengiriman
             </div>
           </div>
         );
     }
   };
 
+  // Success screen
   if (orderCompleted) {
     return (
       <div
@@ -962,7 +820,7 @@ export default function Checkout() {
     );
   }
 
-  // Main UI (sama)
+  // Main checkout UI
   return (
     <div
       style={{
@@ -1040,8 +898,14 @@ export default function Checkout() {
                   </label>
                   <input
                     type="tel"
+                    inputMode="numeric"
+                    pattern="\d*"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      // hanya izinkan angka (hilangkan karakter non-digit)
+                      const onlyDigits = e.target.value.replace(/\D/g, "");
+                      setPhone(onlyDigits);
+                    }}
                     disabled={submitting}
                     placeholder="08xxxxxxxxxx"
                     style={{
