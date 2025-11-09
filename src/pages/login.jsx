@@ -5,6 +5,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
+  sendEmailVerification,
 } from "firebase/auth";
 import { ref, get, set, update } from "firebase/database";
 import { Link, useNavigate } from "react-router-dom";
@@ -28,12 +29,14 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [processing, setProcessing] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
+    setInfo("");
     setProcessing(true);
     try {
       const credential = await signInWithEmailAndPassword(
@@ -43,6 +46,24 @@ const Login = () => {
       );
       const u = credential.user || auth.currentUser;
       if (!u) throw new Error("User tidak ditemukan.");
+
+      // If email not verified, re-send verification and block login (optional)
+      if (u.email && !u.emailVerified) {
+        try {
+          await sendEmailVerification(u);
+        } catch (sendErr) {
+          console.warn("Resend verification failed:", sendErr);
+        }
+        // sign out to prevent partially signed-in state
+        try {
+          await signOut(auth);
+        } catch (_) {}
+        setError(
+          "Email belum terverifikasi. Link verifikasi telah dikirim ulang. Periksa inbox/spam untuk memverifikasi akun Anda."
+        );
+        return;
+      }
+
       const ok = await ensureRTDBUser(u);
       if (!ok) {
         try {
@@ -57,15 +78,27 @@ const Login = () => {
       navigate("/", { replace: true });
     } catch (err) {
       console.error("Email login error:", err);
-      switch (err.code) {
+      const code = err?.code;
+      switch (code) {
         case "auth/user-not-found":
           setError("Akun tidak ditemukan. Silakan daftar.");
           break;
         case "auth/wrong-password":
           setError("Email atau password salah.");
           break;
+        case "auth/invalid-email":
+          setError("Format email tidak valid.");
+          break;
+        case "auth/too-many-requests":
+          setError("Terlalu banyak percobaan login. Coba lagi nanti.");
+          break;
+        case "auth/network-request-failed":
+          setError("Koneksi bermasalah. Periksa jaringan Anda.");
+          break;
         default:
-          setError("Gagal login. Periksa koneksi dan coba lagi.");
+          setError(
+            err?.message || "Gagal login. Periksa koneksi dan coba lagi."
+          );
       }
     } finally {
       setProcessing(false);
@@ -74,6 +107,7 @@ const Login = () => {
 
   const handleGoogleSignIn = async () => {
     setError("");
+    setInfo("");
     setProcessing(true);
     const provider = new GoogleAuthProvider();
     try {
@@ -117,6 +151,7 @@ const Login = () => {
     <div className="auth-container">
       <h2>Login</h2>
       {error && <p className="error">{error}</p>}
+      {info && <p className="info">{info}</p>}
       <form onSubmit={handleLogin}>
         <input
           type="email"

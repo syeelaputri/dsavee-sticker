@@ -1,3 +1,4 @@
+// src/components/offCanvasCart.jsx
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
@@ -141,6 +142,52 @@ export default function OffcanvasCart() {
       id="offcanvasCart"
       aria-labelledby="My Cart"
     >
+      {/* CUSTOM CSS: memastikan garis-garis pada tombol qty terlihat utuh */}
+      <style>{`
+        /* Pastikan offcanvas tidak memotong border tombol */
+        #offcanvasCart .offcanvas-body {
+          overflow: visible;
+        }
+
+        /* Grup qty khusus agar garis tegas dan tidak putus */
+        .cart-qty-btn-group .btn {
+          border-width: 1px !important;
+          border-color: #dee2e6 !important;
+          box-shadow: none !important;
+          position: relative;
+          z-index: 1;
+        }
+
+        /* Hilangkan radius yang menyebabkan border 'terpotong' pada tengah */
+        .cart-qty-btn-group .btn:first-child {
+          border-top-right-radius: 0 !important;
+          border-bottom-right-radius: 0 !important;
+        }
+        .cart-qty-btn-group .qty-display {
+          border-radius: 0 !important;
+          border-left: 0 !important;
+          border-right: 0 !important;
+          pointer-events: none;
+        }
+        .cart-qty-btn-group .btn:last-child {
+          border-top-left-radius: 0 !important;
+          border-bottom-left-radius: 0 !important;
+        }
+
+        /* Pastikan tengahnya terlihat seperti tombol (tetap ada padding) */
+        .cart-qty-btn-group .qty-display {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 36px;
+        }
+
+        /* Agar garis pemisah antar tombol selalu tampak */
+        .cart-qty-btn-group .btn + .btn {
+          margin-left: 0 !important;
+        }
+      `}</style>
+
       <div className="offcanvas-header justify-content-center">
         <button
           type="button"
@@ -193,20 +240,33 @@ export default function OffcanvasCart() {
                       </small>
 
                       <div className="mt-2 d-flex align-items-center">
-                        <div className="btn-group btn-group-sm me-3">
+                        {/* gunakan class cart-qty-btn-group untuk custom styling */}
+                        <div
+                          className="btn-group btn-group-sm me-3 cart-qty-btn-group"
+                          role="group"
+                          aria-label="Quantity controls"
+                        >
                           <button
                             className="btn btn-outline-secondary"
                             onClick={() => decreaseQty(i)}
                             disabled={(Number(i.qty) || 1) <= 1}
+                            aria-label={`Kurangi jumlah ${i.name}`}
                           >
                             -
                           </button>
-                          <span className="btn btn-outline-light text-dark px-3">
+
+                          {/* Tampilkan qty dengan border yang sama agar tidak 'terpotong' */}
+                          <span
+                            className="btn btn-outline-secondary text-dark px-3 qty-display"
+                            aria-hidden="true"
+                          >
                             {Number(i.qty) || 1}
                           </span>
+
                           <button
                             className="btn btn-outline-secondary"
                             onClick={() => increaseQty(i)}
+                            aria-label={`Tambah jumlah ${i.name}`}
                           >
                             +
                           </button>

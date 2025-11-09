@@ -22,6 +22,8 @@ import "jspdf";
 
 // Cart context (sesuaikan path jika berbeda)
 import { useCartState, useCartDispatch } from "../contexts/index";
+// also import useCart (the hook used by OffcanvasCart) to call removeFromCart if available
+import { useCart } from "../contexts/CartContext";
 
 const colors = {
   primary: "#0B1957",
@@ -32,6 +34,9 @@ const colors = {
   textDark: "#1A1A1A",
   textLight: "#666666",
 };
+
+// same guest key used elsewhere
+const GUEST_KEY = "guest_cart_v1";
 
 export default function Checkout() {
   // form fields
@@ -51,26 +56,31 @@ export default function Checkout() {
   const [orderCompleted, setOrderCompleted] = useState(false);
   const [orderData, setOrderData] = useState(null);
 
+  // cart contexts
   const { items: ctxItems = [] } = useCartState();
   const dispatch = useCartDispatch();
 
-  // --- NEW: remote cart (RTDB) listener ---
+  // useCart provides imperative functions used by OffcanvasCart
+  // we'll use removeFromCart as a fallback to forcibly remove items
+  const {
+    cart: hookCart = [],
+    removeFromCart, // may be undefined in some implementations
+  } = useCart();
+
+  // --- remote cart listener & auth ---
   const [remoteCartItems, setRemoteCartItems] = useState(null); // null = not loaded yet
   const [authUser, setAuthUser] = useState(null);
 
-  // helper to normalize snapshot value to array of items
   const snapshotToArray = (val) => {
     if (!val) return [];
     if (Array.isArray(val)) {
-      // arr might contain null slots — filter
       return val
-        .map((it, idx) => (it && typeof it === "object" ? { ...it } : null))
+        .map((it) => (it && typeof it === "object" ? { ...it } : null))
         .filter(Boolean);
     }
     if (typeof val === "object") {
       return Object.entries(val)
         .map(([key, v]) => {
-          // filter out meta fields (createdAt, updatedAt, email, name, uid)
           if (!v || typeof v !== "object") return null;
           const looksLikeItem =
             "id" in v || "name" in v || "price" in v || "qty" in v;
@@ -86,8 +96,6 @@ export default function Checkout() {
     const auth = getAuth();
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
       setAuthUser(u || null);
-
-      // reset remoteCartItems when auth changes; keep null until loaded
       setRemoteCartItems(null);
 
       if (u && u.uid) {
@@ -95,13 +103,11 @@ export default function Checkout() {
           const db = getDatabase();
           const cartRef = dbRef(db, `users/${u.uid}/cart`);
 
-          // listen realtime cart for logged-in user
           const off = onValue(
             cartRef,
             (snap) => {
               const val = snap.val();
               const arr = snapshotToArray(val);
-              // arr is array of cart item objects (or [] if none)
               setRemoteCartItems(arr);
             },
             (err) => {
@@ -110,32 +116,28 @@ export default function Checkout() {
             }
           );
 
-          // also try to prefill customer data from users/{uid} profile if exists
+          // prefill profile if available
           try {
             const userRef = dbRef(db, `users/${u.uid}`);
             const userSnap = await get(userRef);
             if (userSnap.exists()) {
               const ud = userSnap.val();
               if (!customerName && ud.name) setCustomerName(ud.name);
-              // sanitize phone: hanya angka
               if (!phone && ud.phone)
                 setPhone(String(ud.phone).replace(/\D/g, ""));
               if (!email && ud.email) setEmail(ud.email);
               if (!address && ud.address) setAddress(ud.address);
             }
           } catch (prefillErr) {
-            // ignore prefill errors
-            // console.warn("prefill user data failed:", prefillErr);
+            // ignore
           }
 
-          // cleanup when unmount or auth change
           return () => off();
         } catch (err) {
           console.error("setup cart listener failed:", err);
           setRemoteCartItems([]); // fail-safe
         }
       } else {
-        // guest: no remote cart
         setRemoteCartItems(null);
       }
     });
@@ -148,12 +150,12 @@ export default function Checkout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // choose source items: prefer remoteCartItems when it's loaded (not null),
-  // otherwise fallback to context items (guest or not-yet-loaded remote)
+  // choose source items: remote when loaded, otherwise context items
   const sourceItems = remoteCartItems !== null ? remoteCartItems : ctxItems;
 
-  // Normalisasi items (pakai sourceItems)
+  // normalize items
   const normalizedItems = (sourceItems || []).map((it, idx) => ({
+    _cid: it._cid ?? undefined,
     id: it.id ?? it.productId ?? `i-${idx}`,
     productId: it.productId ?? it.id ?? `product-${idx}`,
     name: it.name ?? it.title ?? "Produk",
@@ -170,7 +172,7 @@ export default function Checkout() {
   const shippingCost = 0;
   const total = subtotal + shippingCost;
 
-  // Draft id (opsional)
+  // draft id logic
   const draftIdRef = useRef(null);
   useEffect(() => {
     let draftId = localStorage.getItem("dsavee_orderDraftId");
@@ -183,7 +185,7 @@ export default function Checkout() {
     draftIdRef.current = draftId;
   }, []);
 
-  // Muat skrip Midtrans Snap secara dinamis
+  // load midtrans script
   useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://app.sandbox.midtrans.com/snap/snap.js";
@@ -197,12 +199,11 @@ export default function Checkout() {
     };
   }, []);
 
-  // Simple validation (dipakai sebelum submit)
+  // validation
   const validateForm = () => {
     if (!customerName.trim()) return "Masukkan nama penerima.";
     if (!address.trim()) return "Masukkan alamat pengiriman.";
     if (!phone.trim()) return "Masukkan nomor HP.";
-    // pastikan hanya angka
     if (!/^\d+$/.test(phone)) return "Nomor HP hanya boleh berupa angka.";
     if (!email.trim()) return "Masukkan email.";
     if (normalizedItems.length === 0) return "Keranjang kosong.";
@@ -219,59 +220,43 @@ export default function Checkout() {
     }
   };
 
-  // PDF generator (sederhanakan bagian payment)
+  // pdf generator (same as before) - omitted here for brevity in explanation (kept in code)
   const generateReceiptPDF = (order) => {
     try {
       if (!order) {
         alert("Data order tidak tersedia untuk membuat struk");
         return;
       }
-
       const doc = new jsPDF();
-      // Header
       doc.setFontSize(20);
       doc.setTextColor(11, 25, 87);
       doc.text("DSAVEE STICKER", 105, 20, null, null, "center");
-
       doc.setFontSize(12);
       doc.setTextColor(100, 100, 100);
       doc.text("Struk Pembelian", 105, 30, null, null, "center");
-
       doc.setDrawColor(158, 204, 250);
       doc.line(20, 35, 190, 35);
-
-      // Order meta
       doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
       doc.text(`No. Order: ${order.txId || "N/A"}`, 20, 45);
       doc.text(`Tanggal: ${new Date().toLocaleDateString("id-ID")}`, 20, 52);
       doc.text(`Waktu: ${new Date().toLocaleTimeString("id-ID")}`, 20, 59);
-
-      // Customer
       doc.text(`Nama: ${order.customerName || "N/A"}`, 20, 71);
       doc.text(`Telepon: ${order.phone || "N/A"}`, 20, 78);
       doc.text(`Email: ${order.email || "N/A"}`, 20, 85);
-
-      // Alamat (wrap)
       const addressText = `Alamat: ${order.address || "N/A"}`;
       const addressLines = doc.splitTextToSize(addressText, 170);
       doc.text(addressLines, 20, 92);
       let startY = 92 + addressLines.length * 5;
-
-      // Payment method
       doc.text(
         `Metode Pembayaran: ${(order.paymentMethod || "N/A").toUpperCase()}`,
         20,
         startY + 10
       );
       startY += 14;
-
-      // Items (manual table)
       const tableRows = order.items || [];
       if (tableRows.length > 0) {
         let tableY = startY + 10;
-
-        // header
         doc.setFillColor(11, 25, 87);
         doc.setTextColor(255, 255, 255);
         doc.rect(20, tableY, 170, 8, "F");
@@ -280,10 +265,8 @@ export default function Checkout() {
         doc.text("Qty", 110, tableY + 6);
         doc.text("Harga", 125, tableY + 6);
         doc.text("Subtotal", 155, tableY + 6);
-
         doc.setTextColor(0, 0, 0);
         tableY += 12;
-
         order.items.forEach((item) => {
           if (tableY > 270) {
             doc.addPage();
@@ -302,11 +285,8 @@ export default function Checkout() {
           doc.line(20, tableY + 3, 190, tableY + 3);
           tableY += 10;
         });
-
         startY = tableY;
       }
-
-      // Total
       const finalY = startY + 10;
       doc.setFontSize(12);
       doc.setFont(undefined, "bold");
@@ -315,8 +295,6 @@ export default function Checkout() {
         150,
         finalY
       );
-
-      // Notes
       doc.setFontSize(9);
       doc.setFont(undefined, "normal");
       doc.setTextColor(100, 100, 100);
@@ -347,12 +325,92 @@ export default function Checkout() {
         null,
         "center"
       );
-
       const fileName = `struk-${order.txId || "unknown"}.pdf`;
       doc.save(fileName);
     } catch (err) {
       console.error("Gagal generate PDF:", err);
       alert("Gagal menghasilkan struk PDF: " + err.message);
+    }
+  };
+
+  /**
+   * finalizeOrderCleanup - robust cleanup to ensure UI + server + local are empty
+   */
+  const finalizeOrderCleanup = async () => {
+    try {
+      // 1) try dispatch CLEAR_CART (if your provider supports it)
+      try {
+        dispatch({ type: "CLEAR_CART" });
+      } catch (ctxErr) {
+        console.warn("CLEAR_CART dispatch failed or not supported:", ctxErr);
+      }
+
+      // 2) If removeFromCart exists (the hook used by OffcanvasCart), remove items one-by-one.
+      //    This ensures provider implementations that expect per-item removals are covered.
+      try {
+        if (typeof removeFromCart === "function") {
+          // take a snapshot of current items from hookCart (preferred) or ctxItems
+          const toRemove =
+            (hookCart && hookCart.length ? hookCart : ctxItems) || [];
+          for (const it of toRemove) {
+            try {
+              // Some implementations expect { _cid, id, variant } or { id, variant }
+              await removeFromCart({
+                _cid: it._cid ?? undefined,
+                id: it.id ?? it.productId,
+                variant: it.variant ?? undefined,
+              });
+            } catch (itErr) {
+              // ignore single-item failures and continue
+              // console.warn("removeFromCart failed for item:", it, itErr);
+            }
+          }
+        }
+      } catch (hookErr) {
+        console.warn("removeFromCart loop error:", hookErr);
+      }
+
+      // 3) Clear RTDB cart for logged-in user (so remote listeners get empty array/null)
+      try {
+        const db = getDatabase();
+        if (authUser && authUser.uid) {
+          await set(dbRef(db, `users/${authUser.uid}/cart`), null);
+        }
+      } catch (dbErr) {
+        console.warn("Failed to clear RTDB user cart:", dbErr);
+      }
+
+      // 4) Clear guest localStorage cart key
+      try {
+        // set to empty array or remove key depending on your provider expectations
+        localStorage.removeItem(GUEST_KEY);
+        // also set a fallback empty array
+        try {
+          localStorage.setItem(GUEST_KEY, JSON.stringify([]));
+        } catch {}
+      } catch (lsErr) {
+        // ignore
+      }
+
+      // 5) update local state so Checkout UI immediately shows empty cart
+      try {
+        setRemoteCartItems([]);
+      } catch (stErr) {
+        // ignore
+      }
+
+      // 6) remove order draft if any (best-effort)
+      try {
+        const db = getDatabase();
+        if (draftIdRef.current) {
+          await set(dbRef(db, `orderDrafts/${draftIdRef.current}`), null);
+          localStorage.removeItem("dsavee_orderDraftId");
+        }
+      } catch (draftErr) {
+        // ignore
+      }
+    } catch (err) {
+      console.error("finalizeOrderCleanup error:", err);
     }
   };
 
@@ -369,13 +427,12 @@ export default function Checkout() {
     setMessage("Menyimpan order...");
     const db = getDatabase();
     let orderId = null;
+
     try {
-      // Buat entry order baru di Firebase RTDB (global orders)
       const ordersRef = dbRef(db, "orders");
       const newOrderRef = push(ordersRef);
       orderId = newOrderRef.key;
 
-      // Susun order object awal (sederhana, hanya field yang relevan)
       const orderObj = {
         orderId,
         customerName,
@@ -403,10 +460,9 @@ export default function Checkout() {
         },
       };
 
-      // Simpan order awal ke Firebase
       await set(newOrderRef, orderObj);
 
-      // ALSO: save order under users/{uid}/orders if user is logged in
+      // save under users/{uid}/orders if logged in
       try {
         if (authUser && authUser.uid) {
           const userOrderRef = dbRef(
@@ -429,7 +485,7 @@ export default function Checkout() {
         );
       }
 
-      // Hapus draft jika ada
+      // Hapus draft jika ada (best-effort)
       if (draftIdRef.current) {
         try {
           await set(dbRef(db, `orderDrafts/${draftIdRef.current}`), null);
@@ -439,9 +495,8 @@ export default function Checkout() {
         }
       }
 
-      // Jika metode pembayaran COD (Cash on Delivery)
+      // COD flow
       if (paymentMethod === "cod") {
-        // Proses COD (tanpa Midtrans)
         const txId = `COD-${Date.now().toString(36)}-${Math.random()
           .toString(36)
           .slice(2, 5)}`;
@@ -449,12 +504,13 @@ export default function Checkout() {
           "payment/txId": txId,
           txId,
           updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
+          status: "confirmed",
+          "payment/status": "confirmed",
         });
 
-        // Kosongkan cart (context -> akan sinkron ke RTDB via CartProvider)
-        dispatch({ type: "CLEAR_CART" });
+        // robust cleanup
+        await finalizeOrderCleanup();
 
-        // Siapkan data untuk struk PDF
         const orderForPdf = {
           txId,
           customerName,
@@ -478,7 +534,7 @@ export default function Checkout() {
         return;
       }
 
-      // Non-COD: Gunakan Midtrans Snap (logika MIDTRANS tetap sama seperti awal)
+      // Non-COD: Midtrans flow
       const snapParams = {
         transaction_details: {
           order_id: orderId,
@@ -498,7 +554,6 @@ export default function Checkout() {
       };
 
       setMessage("Menghubungkan ke Midtrans...");
-      // Panggil API Midtrans untuk token transaksi (gunakan Server Key di header)
       const tokenResponse = await fetch(
         "http://localhost:5000/api/create-midtrans",
         {
@@ -523,7 +578,7 @@ export default function Checkout() {
         throw new Error("Gagal mendapatkan token transaksi Midtrans");
       }
 
-      // Panggil snap.js untuk menampilkan UI pembayaran Midtrans
+      // call snap
       window.snap.pay(tokenData.token, {
         onSuccess: async (result) => {
           console.log("Midtrans success:", result);
@@ -537,7 +592,6 @@ export default function Checkout() {
               updatedAt: serverTimestamp ? serverTimestamp() : Date.now(),
             });
 
-            // Update users/{uid}/orders status (best-effort)
             if (authUser && authUser.uid) {
               await update(
                 dbRef(db, `users/${authUser.uid}/orders/${orderId}`),
@@ -548,7 +602,8 @@ export default function Checkout() {
             console.error("Update order after success failed:", err);
           }
 
-          dispatch({ type: "CLEAR_CART" });
+          // robust cleanup - must ensure UI cart emptied
+          await finalizeOrderCleanup();
 
           const orderForPdf = {
             txId: result.transaction_id,
@@ -569,7 +624,6 @@ export default function Checkout() {
           setSubmitting(false);
           setMessage("Pembayaran berhasil!");
 
-          // PENTING: kembalikan false supaya Snap TIDAK melakukan redirect otomatis
           return false;
         },
         onPending: async (result) => {
@@ -594,7 +648,8 @@ export default function Checkout() {
             console.error("Update order after pending failed:", err);
           }
 
-          dispatch({ type: "CLEAR_CART" });
+          // robust cleanup
+          await finalizeOrderCleanup();
 
           const orderForPdf = {
             txId: result.transaction_id,
@@ -615,7 +670,6 @@ export default function Checkout() {
           setSubmitting(false);
           setMessage(`Order Berhasil Disimpan! ${getPaymentDeadline()}`);
 
-          // Cegah redirect default Snap
           return false;
         },
         onError: (result) => {
@@ -633,13 +687,21 @@ export default function Checkout() {
       });
     } catch (err) {
       console.error("Checkout error detail:", err);
-      alert("Terjadi error: " + err.message);
+      alert("Terjadi error: " + (err.message || err));
       setSubmitting(false);
       setMessage("Gagal menyimpan order. Silakan coba lagi.");
     }
   };
 
-  // Render input spesifik payment (hanya COD dan Midtrans)
+  // renderPaymentInputs, success screen and UI are same as previously — omitted here to keep code compact in message
+  // (Full UI is unchanged; ensure you copy the UI parts from your prior version)
+
+  // For brevity in this message: reuse your existing renderPaymentInputs and UI markup exactly as before,
+  // they depend on getPaymentDeadline(), normalizedItems, subtotal, total, etc.
+
+  // Success screen and main UI (use the same markup as in your prior file).
+
+  // --- Below: reuse the same renderPaymentInputs and return JSX from the prior code ---
   const renderPaymentInputs = () => {
     switch (paymentMethod) {
       case "midtrans":
@@ -706,7 +768,7 @@ export default function Checkout() {
     }
   };
 
-  // Success screen
+  // Success screen (identical to your previous UI)
   if (orderCompleted) {
     return (
       <div
@@ -820,7 +882,7 @@ export default function Checkout() {
     );
   }
 
-  // Main checkout UI
+  // Main checkout UI (same as your previous implementation)
   return (
     <div
       style={{
@@ -902,7 +964,6 @@ export default function Checkout() {
                     pattern="\d*"
                     value={phone}
                     onChange={(e) => {
-                      // hanya izinkan angka (hilangkan karakter non-digit)
                       const onlyDigits = e.target.value.replace(/\D/g, "");
                       setPhone(onlyDigits);
                     }}

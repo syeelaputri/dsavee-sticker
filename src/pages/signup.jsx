@@ -6,6 +6,7 @@ import {
   signInWithPopup,
   updateProfile,
   signOut,
+  sendEmailVerification,
 } from "firebase/auth";
 import { ref, set, get, update } from "firebase/database";
 import { Link, useNavigate } from "react-router-dom";
@@ -69,6 +70,7 @@ const SignUp = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState(""); // non-error messages
   const [processing, setProcessing] = useState(false);
   const navigate = useNavigate();
 
@@ -83,12 +85,14 @@ const SignUp = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setInfo("");
     const { email, password, confirmPassword } = formData;
     const vErr = validatePassword(password);
     if (vErr) return setError(vErr);
     if (password !== confirmPassword) return setError("Password tidak cocok.");
     setProcessing(true);
     try {
+      // create account with email/password
       const cred = await createUserWithEmailAndPassword(
         auth,
         email.trim(),
@@ -96,17 +100,30 @@ const SignUp = () => {
       );
       const u = cred.user;
 
+      // set displayName default (email prefix) if no displayName
       const defaultName = u.email ? u.email.split("@")[0] : "";
       try {
         await updateProfile(u, { displayName: defaultName });
       } catch (e) {
         // ignore profile update errors
+        console.warn("updateProfile failed:", e);
       }
 
+      // write profile to Realtime DB
       const payload = makeProfilePayload(u, { name: defaultName });
       const userRef = ref(rtdb, `users/${u.uid}`);
-      // set profile fields first
       await set(userRef, payload);
+
+      // try to send verification email (best-effort)
+      try {
+        await sendEmailVerification(u);
+        setInfo(
+          "Email verifikasi telah dikirim. Periksa inbox/spam untuk memverifikasi akun Anda."
+        );
+      } catch (verErr) {
+        console.warn("sendEmailVerification failed:", verErr);
+        // non-fatal: keep going
+      }
 
       // --- MERGE guest cart INTO user's cart (karena ini signup) ---
       try {
@@ -156,6 +173,9 @@ const SignUp = () => {
           case "auth/operation-not-allowed":
             setError("Pendaftaran tidak diizinkan. Hubungi admin.");
             break;
+          case "auth/too-many-requests":
+            setError("Terlalu banyak percobaan. Coba lagi nanti.");
+            break;
           default:
             setError(err?.message || "Gagal sign up. Coba lagi.");
         }
@@ -169,6 +189,7 @@ const SignUp = () => {
 
   const handleGoogleSignIn = async () => {
     setError("");
+    setInfo("");
     setProcessing(true);
     const provider = new GoogleAuthProvider();
     try {
@@ -232,6 +253,7 @@ const SignUp = () => {
     <div className="auth-container">
       <h2>Sign Up</h2>
       {error && <p className="error">{error}</p>}
+      {info && <p className="info">{info}</p>}
       <form onSubmit={handleSubmit}>
         <input
           type="email"
@@ -255,6 +277,7 @@ const SignUp = () => {
           <span
             className="toggle-password"
             onClick={() => setShowPassword(!showPassword)}
+            style={{ cursor: "pointer" }}
           >
             {showPassword ? <FaEyeSlash /> : <FaEye />}
           </span>
@@ -273,6 +296,7 @@ const SignUp = () => {
           <span
             className="toggle-password"
             onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+            style={{ cursor: "pointer" }}
           >
             {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
           </span>

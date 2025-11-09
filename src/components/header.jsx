@@ -42,6 +42,13 @@ export default function Header() {
     setShowConfirm(false);
   };
 
+  /**
+   * handleConfirmLogout
+   * - panggil logout() dari AuthContext (tidak mengubah logika logout)
+   * - jika logout sukses dan user sedang di halaman checkout OR
+   *   halaman order history (atau route yang berhubungan dengan order),
+   *   arahkan ke homepage sebagai guest
+   */
   const handleConfirmLogout = async (e) => {
     e?.preventDefault?.();
     try {
@@ -49,14 +56,28 @@ export default function Header() {
       // call provided logout algorithm from context (do NOT change its logic)
       await logout();
 
-      // Jika saat ini user berada di halaman checkout, arahkan ke homepage
-      // (juga menangani route seperti /checkout/step atau query)
-      if (
-        location &&
-        location.pathname &&
-        location.pathname.startsWith("/checkout")
-      ) {
+      // Determine whether current path is one that should redirect to home after logout
+      // We test several common order-related route patterns to be safe.
+      const pathname = (location && location.pathname) || "";
+      const normalized = pathname.toLowerCase();
+
+      const shouldRedirectToHome =
+        normalized.startsWith("/checkout") ||
+        normalized.startsWith("/order") || // covers /order, /orders, /order/..., /orderHistory if path includes 'order'
+        normalized.startsWith("/orders") ||
+        normalized.startsWith("/order-history") ||
+        normalized.startsWith("/orderhistory") ||
+        normalized.startsWith("/order-history".toLowerCase()) ||
+        normalized === "/orderhistory" ||
+        normalized === "/orderhistory/";
+
+      if (shouldRedirectToHome) {
+        // replace so user can't press back into protected page
         navigate("/", { replace: true });
+      } else {
+        // optional: if current page is profile or any protected page you want to force home on logout,
+        // add more conditions above.
+        // We intentionally do nothing otherwise: staying on current page may redirect by route guards.
       }
     } catch (err) {
       console.error("Logout failed:", err);
