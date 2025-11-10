@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from "react";
+import React, { Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { CartProvider } from "./contexts/CartContext";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -14,6 +14,7 @@ import Login from "./pages/login";
 import SignUp from "./pages/signup";
 import OrderHistory from "./pages/orderHistory";
 import ProductDetail from "./pages/productDetail";
+import ChatSupport from "./components/chatSupport"; // <- import
 
 export default function App() {
   return (
@@ -37,6 +38,9 @@ export default function App() {
             </Routes>
           </Suspense>
           <Footer />
+
+          {/* Chat support aktif di semua halaman */}
+          <ChatSupport />
         </Router>
       </CartProvider>
     </AuthProvider>
