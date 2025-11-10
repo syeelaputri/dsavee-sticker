@@ -1,129 +1,47 @@
-// src/pages/dashboardAdmin.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import {
+  getDatabase,
+  ref as dbRef,
+  onValue,
+  set,
+  update,
+  push,
+  remove,
+} from "firebase/database";
 import { useNavigate } from "react-router-dom";
-
-/**
- * Admin Dashboard (updated)
- * - Access control: ONLY dsaveesticker@gmail.com (hard check)
- * - Product cards show ONLY: name, price, stock, size(s)
- * - Orders table: Product column removed; Status is dropdown-only
- * - Orders: "View Product" button remains in Action (opens modal)
- * - Reports: MiniBarChart adjusted to avoid squashed ("gepeng") appearance
- *
- * Data persisted to localStorage for demo:
- * - admin_products, admin_orders, admin_users, admin_settings
- */
 
 const ADMIN_EMAIL = "dsaveesticker@gmail.com";
 
+/* fallback/demo data */
+const demoProducts = [
+  {
+    id: "p1",
+    name: "Sticker A",
+    price: 20000,
+    currency: "IDR",
+    description: "",
+    image: "",
+    sizes: ["Small"],
+    variants: [],
+    stock: 10,
+  },
+];
+const demoUsers = [
+  {
+    uid: "u1",
+    name: "Andi",
+    email: "andi@example.com",
+    phone: "081234567890",
+    address: "",
+  },
+];
+
 export default function AdminDashboard() {
-  // ---------- demo / initial data ----------
-  const demoProducts = [
-    {
-      id: "p1",
-      name: "Sticker A",
-      price: 20000,
-      stock: 50,
-      currency: "IDR",
-      description: "Sticker A - high quality vinyl",
-      image: "",
-      badge: "Best Seller",
-      keywords: ["sticker", "vinyl"],
-      sizes: ["Small", "Medium"],
-      variants: [
-        { id: "v1", name: "Pink", stock: 20 },
-        { id: "v2", name: "Blue", stock: 30 },
-      ],
-    },
-    {
-      id: "p2",
-      name: "Sticker B",
-      price: 0.01,
-      stock: 20,
-      currency: "ETH",
-      description: "Sticker B - crypto edition",
-      image: "",
-      badge: "",
-      keywords: ["crypto", "limited"],
-      sizes: ["One Size"],
-      variants: [],
-    },
-  ];
-
-  const demoOrders = [
-    {
-      order_id: "ORD-1001",
-      created_at: "2025-10-10T09:15:00Z",
-      updated_at: "2025-10-10T09:15:00Z",
-      user_email: "andi@example.com",
-      user_phone: "081234567890",
-      payment: "Crypto",
-      product: "Sticker A (Pink)",
-      product_id: "p1",
-      total: 20000,
-      currency: "IDR",
-      status: "pending",
-    },
-    {
-      order_id: "ORD-1002",
-      created_at: "2025-10-12T12:00:00Z",
-      updated_at: "2025-10-12T12:30:00Z",
-      user_email: "budi@example.com",
-      user_phone: "081298765432",
-      payment: "Bank Transfer",
-      product: "Sticker B",
-      product_id: "p2",
-      total: 50000,
-      currency: "IDR",
-      status: "delivered",
-    },
-    {
-      order_id: "ORD-1003",
-      created_at: "2025-10-13T08:00:00Z",
-      updated_at: "2025-10-14T10:00:00Z",
-      user_email: "citra@example.com",
-      user_phone: "081300011122",
-      payment: "Midtrans",
-      product: "Sticker A (Blue)",
-      product_id: "p1",
-      total: 65000,
-      currency: "IDR",
-      status: "processing",
-    },
-  ];
-
-  const demoUsers = [
-    {
-      uid: "u1",
-      name: "Andi",
-      email: "andi@example.com",
-      phone: "081234567890",
-      address: "Jl. Merdeka 1",
-    },
-    {
-      uid: "u2",
-      name: "Budi",
-      email: "budi@example.com",
-      phone: "081298765432",
-      address: "Jl. Sudirman 22",
-    },
-  ];
-
-  const defaultSettings = {
-    storeName: "Dsavee", // fixed
-    logo: "",
-    contactEmail: "store@example.com",
-    contactPhone: "",
-    paymentMethods: ["Bank Transfer"],
-    shippingCost: 10000,
-    instagram: "",
-    tiktok: "",
-  };
-
-  // ---------- state with localStorage persistence ----------
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
 
+  // products / orders / users (main states)
   const [products, setProducts] = useState(() => {
     try {
       const raw = localStorage.getItem("admin_products");
@@ -136,9 +54,9 @@ export default function AdminDashboard() {
   const [orders, setOrders] = useState(() => {
     try {
       const raw = localStorage.getItem("admin_orders");
-      return raw ? JSON.parse(raw) : demoOrders;
+      return raw ? JSON.parse(raw) : [];
     } catch {
-      return demoOrders;
+      return [];
     }
   });
 
@@ -151,74 +69,43 @@ export default function AdminDashboard() {
     }
   });
 
-  const [settings, setSettings] = useState(() => {
-    try {
-      const raw = localStorage.getItem("admin_settings");
-      const s = raw ? JSON.parse(raw) : defaultSettings;
-      // ensure storeName always Dsavee
-      return { ...defaultSettings, ...s, storeName: "Dsavee" };
-    } catch {
-      return defaultSettings;
-    }
-  });
+  // mapping orderId -> { uid, key } to perform updates
+  const [orderDbIndex, setOrderDbIndex] = useState({});
 
-  // persist
-  useEffect(() => {
-    localStorage.setItem("admin_products", JSON.stringify(products));
-  }, [products]);
+  // persist local copies (demo convenience)
+  useEffect(
+    () => localStorage.setItem("admin_products", JSON.stringify(products)),
+    [products]
+  );
+  useEffect(
+    () => localStorage.setItem("admin_orders", JSON.stringify(orders)),
+    [orders]
+  );
+  useEffect(
+    () => localStorage.setItem("admin_users", JSON.stringify(users)),
+    [users]
+  );
 
-  useEffect(() => {
-    localStorage.setItem("admin_orders", JSON.stringify(orders));
-  }, [orders]);
-
-  useEffect(() => {
-    localStorage.setItem("admin_users", JSON.stringify(users));
-  }, [users]);
-
-  useEffect(() => {
-    // ensure storeName remains Dsavee
-    setSettings((s) => ({ ...s, storeName: "Dsavee" }));
-    localStorage.setItem(
-      "admin_settings",
-      JSON.stringify({ ...settings, storeName: "Dsavee" })
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    settings.paymentMethods,
-    settings.contactEmail,
-    settings.contactPhone,
-    settings.logo,
-    settings.shippingCost,
-    settings.instagram,
-    settings.tiktok,
-  ]);
-
-  // ---------- ACCESS CONTROL: STRICT for single admin email ----------
-  const navigate = useNavigate();
+  // ---------- ACCESS CONTROL ----------
   useEffect(() => {
     const auth = getAuth();
     const unsub = onAuthStateChanged(
       auth,
       async (user) => {
-        // If no authenticated user -> redirect to login
         if (!user) {
           navigate("/login", { replace: true });
           return;
         }
-        const userEmail = (user.email || "").toLowerCase();
-        if (userEmail !== ADMIN_EMAIL.toLowerCase()) {
+        if ((user.email || "").toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
           try {
             await signOut(auth);
-          } catch (e) {}
+          } catch {}
           alert("Access denied: hanya admin yang boleh mengakses halaman ini.");
           navigate("/", { replace: true });
-          return;
         }
-        // allowed: admin — do nothing
       },
       (err) => {
         console.error("onAuthStateChanged error:", err);
-        alert("Access error. Redirecting.");
         navigate("/", { replace: true });
       }
     );
@@ -228,7 +115,170 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
-  // ---------- helpers ----------
+  // ---------- FIREBASE LISTENERS (products + users -> derive orders) ----------
+  useEffect(() => {
+    let db;
+    try {
+      db = getDatabase();
+    } catch (err) {
+      console.warn("Firebase not initialized", err);
+      return;
+    }
+
+    // products
+    const prRef = dbRef(db, "products");
+    const unsubP = onValue(
+      prRef,
+      (snap) => {
+        const val = snap.val();
+        if (!val) {
+          setProducts([]);
+          return;
+        }
+        const arr = Object.entries(val).map(([key, v]) => {
+          const variants = [];
+          Object.keys(v || {}).forEach((k) => {
+            const m = k.match(/^stock(\d+)$/i);
+            if (m) {
+              const idx = m[1];
+              variants.push({
+                id: `${key}-v${idx}`,
+                name: v[`variantName${idx}`] || `Varian ${idx}`,
+                stock: Number(v[`stock${idx}`] || 0),
+                image: v[`image${idx}`] || null,
+              });
+            }
+          });
+          const sizes =
+            typeof v.size === "string" && v.size.includes(",")
+              ? v.size
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : v.size
+              ? [v.size]
+              : [];
+          const keywords =
+            typeof v.keyword === "string"
+              ? v.keyword
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : Array.isArray(v.keyword)
+              ? v.keyword
+              : [];
+          return {
+            id: key,
+            name: v.name || v.title || "Unnamed",
+            price: Number(v.price || 0),
+            stock: variants.length ? 0 : Number(v.stock || 0),
+            currency: v.currency || "IDR",
+            description: v.description || "",
+            image: v.image || "",
+            images: [v.image, v.image1, v.image2].filter(Boolean),
+            badge: v.badge || "",
+            keywords,
+            sizes,
+            variants,
+            raw: v,
+          };
+        });
+        setProducts(arr);
+      },
+      (err) => console.error("products onValue err", err)
+    );
+
+    // users -> flatten orders
+    const usersRef = dbRef(db, "users");
+    const unsubU = onValue(
+      usersRef,
+      (snap) => {
+        const val = snap.val();
+        if (!val) {
+          setUsers([]);
+          setOrders([]);
+          setOrderDbIndex({});
+          return;
+        }
+        const uArr = [];
+        const ordersArr = [];
+        const idx = {};
+        Object.entries(val).forEach(([uid, uobj]) => {
+          uArr.push({
+            uid,
+            name: uobj.name || uobj.displayName || "",
+            email: uobj.email || "",
+            phone: uobj.phone || uobj.phoneNumber || "",
+            address: uobj.address || uobj.alamat || "",
+            raw: uobj,
+          });
+          if (uobj.orders) {
+            Object.entries(uobj.orders).forEach(([orderKey, orderObj]) => {
+              const orderId = orderObj.oid || orderObj.order_id || orderKey;
+              let createdAt =
+                orderObj.createdAt ||
+                orderObj.created_at ||
+                orderObj.date ||
+                null;
+              if (createdAt && typeof createdAt === "number")
+                createdAt = new Date(createdAt).toISOString();
+              const productList = Array.isArray(orderObj.product)
+                ? orderObj.product
+                : orderObj.product && typeof orderObj.product === "object"
+                ? Object.values(orderObj.product)
+                : [];
+              const firstProduct = productList.length ? productList[0] : null;
+              const productName =
+                (firstProduct && (firstProduct.name || firstProduct.title)) ||
+                orderObj.productName ||
+                orderObj.product ||
+                "";
+
+              const normalized = {
+                order_id: String(orderId),
+                created_at: createdAt,
+                user_email: uobj.email || "",
+                user_phone: orderObj.phone || uobj.phone || "",
+                payment:
+                  orderObj.method || orderObj.payment || orderObj.gateway || "",
+                product: productName,
+                product_id:
+                  (firstProduct &&
+                    (firstProduct.productId || firstProduct.id)) ||
+                  null,
+                total: Number(
+                  orderObj.total || orderObj.totalPrice || orderObj.amount || 0
+                ),
+                currency: orderObj.currency || "IDR",
+                status: orderObj.status || orderObj.state || "pending",
+                uid,
+                _dbKey: orderKey,
+                raw: orderObj,
+              };
+              ordersArr.push(normalized);
+              idx[String(orderId)] = { uid, key: orderKey };
+            });
+          }
+        });
+        setUsers(uArr);
+        setOrders(ordersArr);
+        setOrderDbIndex(idx);
+      },
+      (err) => console.error("users onValue err", err)
+    );
+
+    return () => {
+      try {
+        if (typeof unsubP === "function") unsubP();
+      } catch {}
+      try {
+        if (typeof unsubU === "function") unsubU();
+      } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------- HELPERS ----------
   const normalizeStatus = (s) => {
     if (!s && s !== 0) return "pending";
     const st = String(s).trim().toLowerCase();
@@ -259,27 +309,27 @@ export default function AdminDashboard() {
     { value: "cancelled", label: "Dibatalkan" },
   ];
 
-  // ---------- metrics ----------
+  // METRICS - triple-checked per request:
+  // 1) Total Pendapatan = sum of all orders.total (across all users)
+  // 2) Jumlah Pelanggan = number of users (users.length)
   const metrics = useMemo(() => {
     const totalOrders = orders.length;
-    const totalRevenue = orders
-      .filter((o) => normalizeStatus(o.status) === "delivered")
-      .reduce((acc, o) => acc + Number(o.total || 0), 0);
-    const pelangganCount = new Set(
-      orders.map((o) => o.user_email).filter(Boolean)
-    ).size;
+    const totalRevenue = orders.reduce(
+      (acc, o) => acc + Number(o.total || 0),
+      0
+    );
+    const pelangganCount = users.length;
     const jumlahProduk = products.length;
     return { totalOrders, totalRevenue, pelangganCount, jumlahProduk };
-  }, [orders, products]);
+  }, [orders, users, products]);
 
-  // ---------- product CRUD ----------
+  // ---------- Product modal (variants image inputs, hide top-level stock when variants exist) ----------
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
   const [productForm, setProductForm] = useState({
     id: "",
     name: "",
     price: 0,
-    stock: 0,
     currency: "IDR",
     description: "",
     image: "",
@@ -287,6 +337,7 @@ export default function AdminDashboard() {
     keywords: [],
     sizes: [],
     variants: [],
+    stock: 0,
   });
 
   function openAddProduct() {
@@ -295,7 +346,6 @@ export default function AdminDashboard() {
       id: `p${Date.now()}`,
       name: "",
       price: 0,
-      stock: 0,
       currency: "IDR",
       description: "",
       image: "",
@@ -303,6 +353,7 @@ export default function AdminDashboard() {
       keywords: [],
       sizes: [],
       variants: [],
+      stock: 0,
     });
     setProductModalOpen(true);
     setActiveTab("products");
@@ -314,7 +365,6 @@ export default function AdminDashboard() {
       id: p.id,
       name: p.name || "",
       price: p.price || 0,
-      stock: p.stock || 0,
       currency: p.currency || "IDR",
       description: p.description || "",
       image: p.image || "",
@@ -322,12 +372,13 @@ export default function AdminDashboard() {
       keywords: Array.isArray(p.keywords) ? p.keywords : [],
       sizes: Array.isArray(p.sizes) ? p.sizes : [],
       variants: Array.isArray(p.variants) ? p.variants : [],
+      stock: p.stock || 0,
     });
     setProductModalOpen(true);
     setActiveTab("products");
   }
 
-  // image read
+  // image read helper
   async function handleImageFileToDataUrl(file) {
     if (!file) return "";
     return await new Promise((resolve, reject) => {
@@ -348,49 +399,13 @@ export default function AdminDashboard() {
     }
   }
 
-  function saveProduct(e) {
-    e.preventDefault();
-    const normalized = {
-      ...productForm,
-      price: Number(productForm.price) || 0,
-      stock: Number(productForm.stock) || 0,
-      keywords: Array.isArray(productForm.keywords)
-        ? productForm.keywords
-        : String(productForm.keywords || "")
-            .split(",")
-            .map((k) => k.trim())
-            .filter(Boolean),
-      sizes: Array.isArray(productForm.sizes)
-        ? productForm.sizes
-        : String(productForm.sizes || "")
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-      variants: Array.isArray(productForm.variants) ? productForm.variants : [],
-    };
-    if (editingProductId) {
-      setProducts((prev) =>
-        prev.map((x) => (x.id === editingProductId ? normalized : x))
-      );
-    } else {
-      setProducts((prev) => [normalized, ...prev]);
-    }
-    setProductModalOpen(false);
-    setEditingProductId(null);
-  }
-
-  function deleteProduct(id) {
-    if (!window.confirm("Hapus produk ini?")) return;
-    setProducts((prev) => prev.filter((p) => p.id !== id));
-  }
-
   // variant helpers
   function addVariant() {
     setProductForm((s) => ({
       ...s,
       variants: [
         ...(s.variants || []),
-        { id: `v${Date.now()}`, name: "", stock: 0 },
+        { id: `v${Date.now()}`, name: "", stock: 0, image: "" },
       ],
     }));
   }
@@ -408,14 +423,95 @@ export default function AdminDashboard() {
       return { ...s, variants: vs };
     });
   }
+  async function handleVariantImageChange(e, idx) {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try {
+      const dataUrl = await handleImageFileToDataUrl(f);
+      updateVariant(idx, { image: dataUrl });
+    } catch (err) {
+      console.error("variant image error", err);
+    }
+  }
 
-  // ---------- orders ----------
+  // SAVE PRODUCT -> writes to Realtime DB (variant fields as variantName1/stock1/image1)
+  async function saveProduct(e) {
+    e.preventDefault();
+    const dbWrite = {};
+    dbWrite.name = productForm.name || "Unnamed";
+    dbWrite.price = Number(productForm.price || 0);
+    dbWrite.currency = productForm.currency || "IDR";
+    dbWrite.description = productForm.description || "";
+    if (productForm.image) dbWrite.image = productForm.image;
+    if (productForm.badge) dbWrite.badge = productForm.badge;
+    dbWrite.keyword = Array.isArray(productForm.keywords)
+      ? productForm.keywords.join(", ")
+      : String(productForm.keywords || "");
+    dbWrite.size = Array.isArray(productForm.sizes)
+      ? productForm.sizes.join(", ")
+      : String(productForm.sizes || "");
+    try {
+      const db = getDatabase();
+      if (productForm.variants && productForm.variants.length > 0) {
+        productForm.variants.forEach((v, i) => {
+          const idx = i + 1;
+          dbWrite[`variantName${idx}`] = v.name || `Varian ${idx}`;
+          dbWrite[`stock${idx}`] = Number(v.stock || 0);
+          if (v.image) dbWrite[`image${idx}`] = v.image;
+        });
+      } else {
+        dbWrite.stock = Number(productForm.stock || 0);
+      }
+
+      if (editingProductId) {
+        await set(dbRef(db, `products/${editingProductId}`), dbWrite);
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.id === editingProductId ? { ...p, ...dbWrite } : p
+          )
+        );
+      } else {
+        const newRef = push(dbRef(db, "products"));
+        await set(newRef, dbWrite);
+        setProducts((prev) => [{ id: newRef.key, ...dbWrite }, ...prev]);
+      }
+      setProductModalOpen(false);
+      setEditingProductId(null);
+    } catch (err) {
+      console.warn("Failed DB write, falling back to local state", err);
+      if (editingProductId) {
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.id === editingProductId ? { ...p, ...dbWrite } : p
+          )
+        );
+      } else {
+        const id = `local-${Date.now()}`;
+        setProducts((prev) => [{ id, ...dbWrite }, ...prev]);
+      }
+      setProductModalOpen(false);
+      setEditingProductId(null);
+    }
+  }
+
+  async function deleteProduct(id) {
+    if (!window.confirm("Hapus produk ini?")) return;
+    try {
+      const db = getDatabase();
+      await remove(dbRef(db, `products/${id}`));
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      console.warn("Failed to remove from DB", err);
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+    }
+  }
+
+  // ---------- ORDERS: search/pagination (orders) ----------
   const [orderSearch, setOrderSearch] = useState("");
   const [orderPage, setOrderPage] = useState(1);
   const ORDERS_PAGE_SIZE = 8;
   const [orderSortDesc, setOrderSortDesc] = useState(true);
 
-  // normalize existing orders statuses on load
   useEffect(() => {
     setOrders((prev) =>
       prev.map((o) => ({ ...o, status: normalizeStatus(o.status) }))
@@ -429,10 +525,11 @@ export default function AdminDashboard() {
       .trim()
       .toLowerCase();
     if (q) {
-      // product column removed — do not filter by product
       list = list.filter(
         (o) =>
-          (o.order_id || "").toLowerCase().includes(q) ||
+          String(o.order_id || "")
+            .toLowerCase()
+            .includes(q) ||
           (o.user_email || "").toLowerCase().includes(q) ||
           String(o.total || "")
             .toLowerCase()
@@ -454,21 +551,28 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (orderPage > ordersTotalPages) setOrderPage(ordersTotalPages);
   }, [ordersTotalPages, orderPage]);
-
   const pagedOrders = filteredSortedOrders.slice(
     (orderPage - 1) * ORDERS_PAGE_SIZE,
     orderPage * ORDERS_PAGE_SIZE
   );
 
-  function updateOrderStatus(order_id, newStatus) {
+  async function updateOrderStatus(order_id, newStatus) {
     const ns = normalizeStatus(newStatus);
     setOrders((prev) =>
-      prev.map((o) =>
-        o.order_id === order_id
-          ? { ...o, status: ns, updated_at: new Date().toISOString() }
-          : o
-      )
+      prev.map((o) => (o.order_id === order_id ? { ...o, status: ns } : o))
     );
+    try {
+      const mapping = orderDbIndex[String(order_id)];
+      if (!mapping) return;
+      const { uid, key } = mapping;
+      const db = getDatabase();
+      await update(dbRef(db, `users/${uid}/orders/${key}`), {
+        status: ns,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn("Failed update order status in DB", err);
+    }
   }
 
   function cancelOrder(order_id) {
@@ -481,118 +585,54 @@ export default function AdminDashboard() {
     const newOrder = {
       order_id: id,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
       user_email: `user${Math.floor(Math.random() * 100)}@mail.com`,
-      user_phone: `0812${Math.floor(10000000 + Math.random() * 89999999)}`,
-      payment: Math.random() > 0.5 ? "Crypto" : "Bank Transfer",
-      // product fields still exist in data model but NOT shown in table
-      product: products.length ? products[0].name : "Unknown product",
-      product_id: products.length ? products[0].id : undefined,
-      total: Math.random() > 0.5 ? 25000 : 0.02,
-      currency: Math.random() > 0.5 ? "IDR" : "ETH",
+      payment: "Bank Transfer",
+      product: products.length ? products[0].name : "Unknown",
+      total: 25000,
+      currency: "IDR",
       status: "pending",
     };
     setOrders((prev) => [newOrder, ...prev]);
     setActiveTab("orders");
   }
 
-  // ---------- view product modal for orders ----------
+  // view product modal for orders
   const [viewProductModalOpen, setViewProductModalOpen] = useState(false);
   const [viewingProduct, setViewingProduct] = useState(null);
-
   function handleViewOrderProduct(order) {
-    // try to find product by product_id, else by name matching
     let found = null;
-    if (order.product_id) {
+    if (order.product_id)
       found = products.find((p) => p.id === order.product_id);
-    }
-    if (!found && order.product) {
-      found = products.find((p) =>
-        order.product.toLowerCase().includes(p.name.toLowerCase())
+    if (!found && order.product)
+      found = products.find(
+        (p) =>
+          p.name && order.product.toLowerCase().includes(p.name.toLowerCase())
       );
-    }
-    if (found) {
-      setViewingProduct(found);
-    } else {
-      // fallback show minimal info using the order.product string
+    if (found) setViewingProduct(found);
+    else
       setViewingProduct({
-        name: order.product || "Unknown product",
+        name: order.product || "Unknown",
         price: order.total,
         currency: order.currency,
-        stock: 0,
         sizes: [],
         description: "",
       });
-    }
     setViewProductModalOpen(true);
   }
 
-  // ---------- users ----------
-  function deleteUser(uid) {
+  async function deleteUser(uid) {
     if (!window.confirm("Hapus akun pengguna ini?")) return;
-    setUsers((prev) => prev.filter((u) => u.uid !== uid));
-  }
-
-  // ---------- settings ----------
-  function handleSettingsChange(e) {
-    const { name, value, type, checked } = e.target;
-    if (name === "paymentMethods") {
-      setSettings((s) => {
-        const setPM = new Set(s.paymentMethods || []);
-        if (checked) setPM.add(value);
-        else setPM.delete(value);
-        return { ...s, paymentMethods: Array.from(setPM) };
-      });
-      return;
-    }
-    if (type === "number") {
-      setSettings((s) => ({ ...s, [name]: Number(value || 0) }));
-      return;
-    }
-    // storeName is fixed
-    if (name === "storeName") return;
-    setSettings((s) => ({ ...s, [name]: value }));
-  }
-
-  async function handleLogoFile(e) {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
     try {
-      const dataUrl = await handleImageFileToDataUrl(f);
-      setSettings((s) => ({ ...s, logo: dataUrl }));
+      const db = getDatabase();
+      await remove(dbRef(db, `users/${uid}`));
+      setUsers((prev) => prev.filter((u) => u.uid !== uid));
     } catch (err) {
-      console.error("Logo read error", err);
+      console.warn("Failed to remove user from DB", err);
+      setUsers((prev) => prev.filter((u) => u.uid !== uid));
     }
   }
 
-  // change password modal (admin)
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  function handleChangePasswordSubmit(e) {
-    e.preventDefault();
-    if (!newPassword || newPassword !== confirmPassword) {
-      alert("Password kosong atau tidak cocok.");
-      return;
-    }
-    // demo: just show success
-    setNewPassword("");
-    setConfirmPassword("");
-    setChangePasswordOpen(false);
-    alert("Password admin berhasil diubah (demo).");
-  }
-
-  // ---------- small helpers ----------
-  function currencyFormat(n, currency) {
-    if (currency === "ETH") return String(n);
-    try {
-      return Number(n).toLocaleString("id-ID");
-    } catch {
-      return String(n);
-    }
-  }
-
-  // ---------- reports: sales last 7 days ----------
+  // ---------- REPORTS ----------
   const salesLast7Days = useMemo(() => {
     const days = [];
     const now = new Date();
@@ -610,13 +650,193 @@ export default function AdminDashboard() {
       });
     }
     orders.forEach((o) => {
-      if (normalizeStatus(o.status) !== "delivered") return;
       const k = String(o.created_at || "").slice(0, 10);
       const idx = days.findIndex((d) => d.key === k);
       if (idx >= 0) days[idx].revenue += Number(o.total || 0);
     });
     return days;
   }, [orders]);
+
+  const topProducts = useMemo(() => {
+    const map = {};
+    orders.forEach((o) => {
+      const name = o.product || "Unknown";
+      if (!map[name]) map[name] = { name, count: 0, revenue: 0 };
+      map[name].count += 1;
+      map[name].revenue += Number(o.total || 0);
+    });
+    return Object.values(map)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [orders]);
+
+  // ---------- PRODUCT search (new) ----------
+  const [productSearch, setProductSearch] = useState("");
+  const filteredProducts = useMemo(() => {
+    const q = String(productSearch || "")
+      .trim()
+      .toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => (p.name || "").toLowerCase().includes(q));
+  }, [products, productSearch]);
+
+  // ---------- SETTINGS (added back) ----------
+  const defaultSettings = {
+    storeName: "Dsavee",
+    logo: "",
+    contactEmail: "store@example.com",
+    contactPhone: "",
+    paymentMethods: ["Bank Transfer"],
+    shippingCost: 10000,
+    instagram: "",
+    tiktok: "",
+  };
+  const [settings, setSettings] = useState(() => {
+    try {
+      const raw = localStorage.getItem("admin_settings");
+      const s = raw ? JSON.parse(raw) : defaultSettings;
+      return { ...defaultSettings, ...s, storeName: "Dsavee" };
+    } catch {
+      return defaultSettings;
+    }
+  });
+
+  // keep local storeName enforced + localStorage
+  useEffect(() => {
+    setSettings((s) => ({ ...s, storeName: "Dsavee" }));
+    localStorage.setItem(
+      "admin_settings",
+      JSON.stringify({ ...settings, storeName: "Dsavee" })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    settings.contactEmail,
+    settings.contactPhone,
+    settings.paymentMethods,
+    settings.shippingCost,
+    settings.logo,
+    settings.instagram,
+    settings.tiktok,
+  ]);
+
+  function handleSettingsChange(e) {
+    const { name, value, type, checked } = e.target;
+    if (name === "paymentMethods") {
+      setSettings((s) => {
+        const setPM = new Set(s.paymentMethods || []);
+        if (checked) setPM.add(value);
+        else setPM.delete(value);
+        return { ...s, paymentMethods: Array.from(setPM) };
+      });
+      return;
+    }
+    if (type === "number") {
+      setSettings((s) => ({ ...s, [name]: Number(value || 0) }));
+      return;
+    }
+    if (name === "storeName") return;
+    setSettings((s) => ({ ...s, [name]: value }));
+  }
+
+  async function handleLogoFile(e) {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try {
+      const dataUrl = await handleImageFileToDataUrl(f);
+      setSettings((s) => ({ ...s, logo: dataUrl }));
+    } catch (err) {
+      console.error("Logo read error", err);
+    }
+  }
+
+  // ---- INTEGRATE contact WITH Realtime DB ----
+  // listen to /contact and sync into settings.contact*
+  useEffect(() => {
+    let db;
+    try {
+      db = getDatabase();
+    } catch (err) {
+      // firebase not initialized
+      return;
+    }
+    const contactRef = dbRef(db, "contact");
+    const unsubC = onValue(
+      contactRef,
+      (snap) => {
+        const v = snap.val();
+        if (!v) return;
+        setSettings((s) => ({
+          ...s,
+          contactEmail: typeof v.email === "string" ? v.email : s.contactEmail,
+          contactPhone: typeof v.phone === "string" ? v.phone : s.contactPhone,
+          instagram:
+            typeof v.instagram === "string" ? v.instagram : s.instagram,
+          tiktok: typeof v.tiktok === "string" ? v.tiktok : s.tiktok,
+        }));
+      },
+      (err) => {
+        console.error("contact onValue err", err);
+      }
+    );
+    return () => {
+      try {
+        if (typeof unsubC === "function") unsubC();
+      } catch {}
+    };
+  }, []);
+
+  // save contact to Realtime DB (path: contact)
+  async function handleSaveSettings(e) {
+    e.preventDefault();
+    try {
+      const db = getDatabase();
+      await set(dbRef(db, "contact"), {
+        email: settings.contactEmail || "",
+        phone: settings.contactPhone || "",
+        instagram: settings.instagram || "",
+        tiktok: settings.tiktok || "",
+      });
+      // also keep local copy
+      localStorage.setItem(
+        "admin_settings",
+        JSON.stringify({ ...settings, storeName: "Dsavee" })
+      );
+      alert("Contact settings saved to Realtime Database.");
+    } catch (err) {
+      console.warn("Failed to save contact to DB, saved locally instead", err);
+      localStorage.setItem(
+        "admin_settings",
+        JSON.stringify({ ...settings, storeName: "Dsavee" })
+      );
+      alert("Gagal menulis ke Firebase — perubahan disimpan secara lokal.");
+    }
+  }
+
+  // change password modal (demo)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  function handleChangePasswordSubmit(e) {
+    e.preventDefault();
+    if (!newPassword || newPassword !== confirmPassword) {
+      alert("Password kosong atau tidak cocok.");
+      return;
+    }
+    setNewPassword("");
+    setConfirmPassword("");
+    setChangePasswordOpen(false);
+    alert("Password admin berhasil diubah (demo).");
+  }
+
+  // ---------- small helpers ----------
+  function currencyFormat(n, currency) {
+    if (currency === "ETH") return String(n);
+    try {
+      return Number(n).toLocaleString("id-ID");
+    } catch {
+      return String(n);
+    }
+  }
 
   // ---------- UI ----------
   return (
@@ -631,13 +851,11 @@ export default function AdminDashboard() {
         <div></div>
       </div>
 
-      {/* tabs */}
       <ul className="nav nav-tabs mb-4">
         {["overview", "products", "orders", "users", "reports", "settings"].map(
           (t) => (
             <li className="nav-item" key={t}>
               <button
-                type="button"
                 className={`nav-link ${activeTab === t ? "active" : ""}`}
                 onClick={() => setActiveTab(t)}
               >
@@ -648,7 +866,6 @@ export default function AdminDashboard() {
         )}
       </ul>
 
-      {/* content */}
       <div>
         {activeTab === "overview" && (
           <div>
@@ -667,15 +884,23 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* PRODUCTS */}
+        {/* PRODUCTS with search box */}
         {activeTab === "products" && (
           <div className="card">
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h5 className="card-title mb-0">Products</h5>
-                <div>
+                <div className="d-flex align-items-center">
+                  <input
+                    type="search"
+                    placeholder="Search product name"
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="form-control form-control-sm me-2"
+                    style={{ minWidth: 220 }}
+                  />
                   <button
-                    className="btn btn-sm btn-primary me-2"
+                    className="btn btn-sm btn-primary"
                     onClick={openAddProduct}
                   >
                     + New Product
@@ -683,27 +908,33 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {products.length === 0 ? (
+              {filteredProducts.length === 0 ? (
                 <p className="text-muted">No products available.</p>
               ) : (
                 <div className="row">
-                  {products.map((p) => (
+                  {filteredProducts.map((p) => (
                     <div className="col-md-6 mb-3" key={p.id}>
                       <div className="card h-100">
                         <div className="card-body">
-                          {/* hanya tampilkan name, price, stock, size(s) */}
                           <h6 className="card-title mb-1">{p.name}</h6>
                           <div className="text-muted small">
                             Rp {currencyFormat(p.price, p.currency)}
                           </div>
                           <div className="small text-muted">
-                            Stock: {p.stock}
+                            Stock:{" "}
+                            {p.variants && p.variants.length
+                              ? p.variants.reduce(
+                                  (a, b) => a + Number(b.stock || 0),
+                                  0
+                                )
+                              : p.stock}
                           </div>
                           <div className="small text-muted">
                             Size:{" "}
-                            {Array.isArray(p.sizes) ? p.sizes.join(", ") : "-"}
+                            {Array.isArray(p.sizes)
+                              ? p.sizes.join(", ")
+                              : p.sizes || "-"}
                           </div>
-
                           <div className="mt-2">
                             <button
                               className="btn btn-sm btn-outline-primary me-2"
@@ -737,7 +968,7 @@ export default function AdminDashboard() {
                 <div className="d-flex">
                   <input
                     type="search"
-                    placeholder="Search order id / email / amount"
+                    placeholder="Search order id/email/amount"
                     value={orderSearch}
                     onChange={(e) => {
                       setOrderSearch(e.target.value);
@@ -756,7 +987,6 @@ export default function AdminDashboard() {
               </div>
 
               <div className="table-responsive">
-                {/* font lebih kecil untuk rapi */}
                 <table
                   className="table table-sm align-middle small"
                   style={{ fontSize: "0.85rem" }}
@@ -765,10 +995,8 @@ export default function AdminDashboard() {
                     <tr>
                       <th>Order ID</th>
                       <th>Created</th>
-                      <th>Updated</th>
                       <th>Email</th>
                       <th>Payment</th>
-                      {/* Product column intentionally removed */}
                       <th>Total</th>
                       <th>Status</th>
                       <th>Action</th>
@@ -783,22 +1011,15 @@ export default function AdminDashboard() {
                             ? new Date(o.created_at).toLocaleString()
                             : "-"}
                         </td>
-                        <td>
-                          {o.updated_at
-                            ? new Date(o.updated_at).toLocaleString()
-                            : "-"}
-                        </td>
                         <td style={{ maxWidth: 180, wordBreak: "break-word" }}>
                           {o.user_email || "-"}
                         </td>
                         <td>{o.payment || "-"}</td>
-                        {/* Product cell removed */}
                         <td>
                           {o.currency}{" "}
                           {currencyFormat(o.total || 0, o.currency || "IDR")}
                         </td>
                         <td>
-                          {/* Status is dropdown-only as requested */}
                           <select
                             className="form-select form-select-sm"
                             value={normalizeStatus(o.status)}
@@ -834,7 +1055,7 @@ export default function AdminDashboard() {
                     ))}
                     {pagedOrders.length === 0 && (
                       <tr>
-                        <td colSpan="8" className="text-center text-muted">
+                        <td colSpan="7" className="text-center text-muted">
                           No orders found.
                         </td>
                       </tr>
@@ -876,7 +1097,6 @@ export default function AdminDashboard() {
           <div className="card">
             <div className="card-body">
               <h5 className="card-title">Users</h5>
-
               <div className="table-responsive">
                 <table className="table table-sm">
                   <thead>
@@ -926,7 +1146,6 @@ export default function AdminDashboard() {
           <div className="card">
             <div className="card-body">
               <h5 className="card-title">Reports</h5>
-              {/* container height increased to avoid "gepeng" look */}
               <div style={{ height: 260 }}>
                 <MiniBarChart
                   data={salesLast7Days.map((d) => ({
@@ -935,20 +1154,52 @@ export default function AdminDashboard() {
                   }))}
                 />
               </div>
-              <div className="mt-3 small text-muted">
-                Total Pendapatan: Rp{" "}
-                {currencyFormat(metrics.totalRevenue, "IDR")}
+              <div className="mt-3">
+                <div className="small text-muted">
+                  Total Pendapatan: Rp{" "}
+                  {currencyFormat(metrics.totalRevenue, "IDR")}
+                </div>
+                <div className="small text-muted">
+                  Total Pesanan: {metrics.totalOrders}
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <h6>Top Products</h6>
+                {topProducts.length === 0 ? (
+                  <div className="text-muted small">No product data.</div>
+                ) : (
+                  <table className="table table-sm">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Orders</th>
+                        <th>Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topProducts.map((tp) => (
+                        <tr key={tp.name}>
+                          <td>{tp.name}</td>
+                          <td>{tp.count}</td>
+                          <td>Rp {currencyFormat(tp.revenue, "IDR")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* SETTINGS */}
+        {/* SETTINGS (integrated with /contact in Realtime DB) */}
         {activeTab === "settings" && (
           <div className="card">
             <div className="card-body">
               <h5 className="card-title">Settings</h5>
-              <form onSubmit={(e) => e.preventDefault()}>
+
+              <form onSubmit={handleSaveSettings}>
                 <div className="row">
                   <div className="col-md-8">
                     <div className="mb-2">
@@ -1015,11 +1266,7 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="mt-3 d-flex gap-2">
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => window.alert("Settings saved (demo).")}
-                      >
+                      <button type="submit" className="btn btn-primary">
                         Save Changes
                       </button>
                     </div>
@@ -1031,7 +1278,7 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* ----- Product Modal ----- */}
+      {/* Product Modal */}
       {productModalOpen && (
         <Modal
           onClose={() => {
@@ -1066,22 +1313,24 @@ export default function AdminDashboard() {
                   }
                 />
               </div>
-              <div className="col-md-4 mb-2">
-                <label className="form-label">Stock</label>
-                <input
-                  required
-                  type="number"
-                  className="form-control"
-                  value={productForm.stock}
-                  onChange={(e) =>
-                    setProductForm((s) => ({ ...s, stock: e.target.value }))
-                  }
-                />
-              </div>
+              {!productForm.variants || productForm.variants.length === 0 ? (
+                <div className="col-md-4 mb-2">
+                  <label className="form-label">Stock</label>
+                  <input
+                    required
+                    type="number"
+                    className="form-control"
+                    value={productForm.stock}
+                    onChange={(e) =>
+                      setProductForm((s) => ({ ...s, stock: e.target.value }))
+                    }
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="mb-2">
-              <label className="form-label">Image</label>
+              <label className="form-label">Image (thumbnail)</label>
               <div className="mb-2">
                 <img
                   src={productForm.image || "/images/placeholder.png"}
@@ -1114,7 +1363,7 @@ export default function AdminDashboard() {
                 onChange={(e) =>
                   setProductForm((s) => ({ ...s, badge: e.target.value }))
                 }
-                placeholder="e.g. Best Seller"
+                placeholder="-xx%"
               />
             </div>
 
@@ -1154,17 +1403,34 @@ export default function AdminDashboard() {
             <div className="mb-2">
               <div className="d-flex justify-content-between align-items-center mb-1">
                 <label className="form-label mb-0">Variants</label>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-primary"
-                  onClick={addVariant}
-                >
-                  + Add Variant
-                </button>
+                <div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary me-2"
+                    onClick={addVariant}
+                  >
+                    + Add Variant
+                  </button>
+                  {productForm.variants && productForm.variants.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() =>
+                        setProductForm((s) => ({ ...s, variants: [] }))
+                      }
+                    >
+                      Clear Variants
+                    </button>
+                  )}
+                </div>
               </div>
+
               {productForm.variants && productForm.variants.length > 0 ? (
                 productForm.variants.map((v, idx) => (
-                  <div key={v.id} className="d-flex gap-2 mb-2">
+                  <div
+                    key={v.id}
+                    className="d-flex gap-2 mb-2 align-items-center"
+                  >
                     <input
                       className="form-control form-control-sm"
                       placeholder="Variant name"
@@ -1184,6 +1450,28 @@ export default function AdminDashboard() {
                         })
                       }
                     />
+                    <div style={{ minWidth: 120 }}>
+                      <img
+                        src={v.image || "/images/placeholder.png"}
+                        alt="variant"
+                        style={{
+                          width: 100,
+                          height: 60,
+                          objectFit: "cover",
+                          borderRadius: 6,
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = "/images/placeholder.png";
+                        }}
+                      />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleVariantImageChange(e, idx)}
+                        className="form-control form-control-sm mt-1"
+                      />
+                    </div>
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-danger"
@@ -1217,7 +1505,7 @@ export default function AdminDashboard() {
         </Modal>
       )}
 
-      {/* View Product Modal (from Orders) */}
+      {/* View Product Modal */}
       {viewProductModalOpen && viewingProduct && (
         <Modal
           onClose={() => {
@@ -1261,19 +1549,6 @@ export default function AdminDashboard() {
                   ? viewingProduct.sizes.join(", ")
                   : "-"}
               </div>
-              {viewingProduct.badge && (
-                <div className="mt-2">
-                  <span className="badge bg-warning text-dark">
-                    {viewingProduct.badge}
-                  </span>
-                </div>
-              )}
-              {viewingProduct.keywords &&
-                viewingProduct.keywords.length > 0 && (
-                  <div className="mt-2 small text-muted">
-                    Keywords: {viewingProduct.keywords.join(", ")}
-                  </div>
-                )}
               <div className="mt-2">{viewingProduct.description}</div>
             </div>
           </div>
@@ -1291,7 +1566,7 @@ export default function AdminDashboard() {
         </Modal>
       )}
 
-      {/* Change Password Modal (admin) */}
+      {/* Change Password Modal (admin demo) */}
       {changePasswordOpen && (
         <Modal onClose={() => setChangePasswordOpen(false)}>
           <h5>Change Admin Password</h5>
@@ -1335,20 +1610,18 @@ export default function AdminDashboard() {
 
 /* ---------------- small reusable components ---------------- */
 
-function StatCard({ title, value, small }) {
+function StatCard({ title, value }) {
   return (
     <div className="col-md-3">
       <div className="card p-3 h-100">
         <div className="small text-muted">{title}</div>
         <div className="h4">{value}</div>
-        {small ? <div className="small text-muted">{small}</div> : null}
       </div>
     </div>
   );
 }
 
 function Modal({ children, onClose }) {
-  // simple centered modal
   return (
     <div
       className="modal d-block"
@@ -1368,15 +1641,12 @@ function Modal({ children, onClose }) {
   );
 }
 
-/* MiniBarChart: adjusted SVG so it doesn't appear "gepeng" */
 function MiniBarChart({ data }) {
   const max = Math.max(...data.map((d) => d.value), 1);
-  // wider canvas and taller height to keep aspect reasonable
-  const w = 700;
-  const h = 220;
-  const pad = 28;
+  const w = 700,
+    h = 220,
+    pad = 28;
   const barW = Math.max(12, (w - pad * 2) / data.length - 12);
-
   return (
     <svg
       viewBox={`0 0 ${w} ${h}`}
@@ -1384,8 +1654,7 @@ function MiniBarChart({ data }) {
       height="100%"
       preserveAspectRatio="xMidYMid meet"
     >
-      <rect x="0" y="0" width={w} height={h} fill="#ffffff" />
-      {/* grid lines */}
+      <rect x="0" y="0" width={w} height={h} fill="#fff" />
       {[0, 0.25, 0.5, 0.75, 1].map((g, i) => {
         const y = pad + (h - pad * 2) * (1 - g);
         return (

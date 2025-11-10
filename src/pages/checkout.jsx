@@ -311,7 +311,7 @@ export default function Checkout() {
     if (!address.trim()) return "Masukkan alamat pengiriman.";
     if (!phone.trim()) return "Masukkan nomor HP.";
     if (!/^\d+$/.test(phone)) return "Nomor HP hanya boleh berupa angka.";
-    if (!email.trim()) return "Masukkan email penerima.";
+    if (!email.trim()) return "Masukkan email.";
     if (normalizedItems.length === 0) return "Keranjang kosong.";
     return null;
   };
@@ -1020,9 +1020,13 @@ export default function Checkout() {
                 border: `1px solid ${colors.secondary}`,
               }}
             >
-              <strong>Pembayaran dilakukan secara online</strong>
+              <strong>
+                Setelah menekan konfirmasi, popup Midtrans akan muncul untuk
+                menyelesaikan pembayaran.
+              </strong>
               <br />
-              Bisa menggunakan QR, e-wallet, atau virtual account.
+              Ikuti instruksi di popup (bisa menggunakan QR, e-wallet, atau
+              virtual account tergantung pilihan di Midtrans).
             </div>
           </div>
         );
@@ -1051,7 +1055,7 @@ export default function Checkout() {
             >
               <strong>Pembayaran dilakukan ketika barang diterima</strong>
               <br />
-              Pastikan Anda akan berada di alamat yang dituju saat pengiriman.
+              Pastikan Anda akan berada di alamat yang dituju saat pengiriman
             </div>
           </div>
         );
@@ -1191,17 +1195,6 @@ export default function Checkout() {
           zIndex: 2,
         }}
       >
-        {/* ADDED: Back button (navigate to previous page) */}
-        <div className="mb-3">
-          <button
-            className="btn btn-outline-secondary mb-4"
-            onClick={() => navigate(-1)}
-            aria-label="Back to Products"
-          >
-            ← Back
-          </button>
-        </div>
-
         <div style={{ textAlign: "center", paddingTop: 30, marginBottom: 30 }}>
           <h1
             style={{
@@ -1213,7 +1206,7 @@ export default function Checkout() {
             Checkout
           </h1>
           <p style={{ color: colors.textLight, fontSize: "1.1rem" }}>
-            Lengkapi informasi pembayaran dan pengiriman
+            Lengkapi informasi pengiriman dan pembayaran
           </p>
         </div>
 
@@ -1238,14 +1231,14 @@ export default function Checkout() {
               <div style={{ display: "flex", gap: 12 }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontWeight: 600, color: colors.primary }}>
-                    Nama
+                    Nama Penerima
                   </label>
                   <input
                     type="text"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     disabled={submitting}
-                    placeholder="Masukkan nama penerima"
+                    placeholder="Masukkan nama lengkap"
                     style={{
                       width: "100%",
                       padding: 8,
@@ -1285,7 +1278,7 @@ export default function Checkout() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={submitting}
-                  placeholder="Masukkan email penerima"
+                  placeholder="email@contoh.com"
                   style={{
                     width: "100%",
                     padding: 8,
@@ -1297,13 +1290,13 @@ export default function Checkout() {
 
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontWeight: 600, color: colors.primary }}>
-                  Alamat
+                  Alamat Pengiriman
                 </label>
                 <textarea
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   disabled={submitting}
-                  placeholder="Masukkan alamat pengiriman"
+                  placeholder="Alamat lengkap"
                   style={{
                     width: "100%",
                     padding: 8,
@@ -1330,7 +1323,7 @@ export default function Checkout() {
                   {
                     value: "midtrans",
                     label: "Midtrans",
-                    desc: "Pembayaran Online",
+                    desc: "Pembayaran Online (Midtrans)",
                   },
                 ].map((m) => (
                   <div
@@ -1380,9 +1373,9 @@ export default function Checkout() {
                     <i className="fas fa-receipt fa-3x text-muted mb-3"></i>
                     <h4 style={{ marginTop: 8 }}>Belum Login</h4>
                     <p style={{ color: colors.textLight }}>
-                      Anda harus login untuk menyelesaikan pembelian. Barang
-                      yang ada di keranjang akan tetap tersimpan setelah Anda
-                      signup/login.
+                      Anda harus mendaftar atau masuk untuk menyelesaikan
+                      pembelian. Barang yang ada di keranjang akan tetap
+                      tersimpan setelah Anda mendaftar/masuk.
                     </p>
 
                     <div
@@ -1447,7 +1440,7 @@ export default function Checkout() {
                   {submitting
                     ? "Memproses Order..."
                     : !authUser
-                    ? `Konfirmasi Order - Rp${total.toLocaleString("id-ID")}`
+                    ? "Silakan Login / Daftar untuk Melanjutkan"
                     : `Konfirmasi Order - Rp${total.toLocaleString("id-ID")}`}
                 </button>
               </div>

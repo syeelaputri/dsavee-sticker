@@ -14,7 +14,8 @@ export default function ProductDetail() {
   const [availableColors, setAvailableColors] = useState([]);
   const [selectedColor, setSelectedColor] = useState(null);
   const [qty, setQty] = useState(1);
-  const { addToCart } = useCart(); // <-- gunakan addToCart dari context
+  // <-- ambil juga cart & updateItemQty dari context agar bisa merge/merge qty
+  const { addToCart, cart = [], updateItemQty } = useCart();
 
   const shippingCost = 10000;
 
@@ -149,6 +150,7 @@ export default function ProductDetail() {
   }
 
   // generate unique cart id per combination product + variant + color
+  // (tetap ada tapi tidak lagi dipakai untuk id utama; tidak menghapus agar logic lain tetap utuh)
   function makeCartItemId(prodId, variant, color) {
     const v = serializeForId(variant);
     const c = serializeForId(color);
@@ -236,27 +238,43 @@ export default function ProductDetail() {
       return;
     }
 
-    // buat id unik untuk item cart berdasarkan varian/warna
-    const cartItemId = makeCartItemId(
-      product.id,
-      selectedVariant,
-      selectedColor
-    );
+    // === Perubahan logika: gunakan id sederhana (product.id) sesuai struktur DB Anda ===
+    const simpleId = product.id;
 
-    addToCart({
-      // use composite id so cart treats different variant/color as different items
-      id: cartItemId,
-      // keep original product id for reference
-      productId: product.id,
-      name: product.name,
+    // prepare payload matching DB structure (types sanitized)
+    const payload = {
+      id: simpleId, // "product-1"
+      image:
+        selectedImageForProduct(product, selectedColor) ||
+        product.image ||
+        "/images/placeholder.png",
+      name: product.name || "",
       price: Number(product.price) || 0,
       qty: Number(qty) || 1,
-      size: product.size,
-      image: selectedImageForProduct(product, selectedColor),
+      size: product.size || "",
+      // keep metadata but not part of id
       variant: selectedVariant,
       color: selectedColor,
+      productId: product.id,
       shippingCost,
-    });
+    };
+
+    // check existing item in cart by simple id (product.id)
+    const existing = (cart || []).find((ci) => ci.id === simpleId);
+
+    if (existing && typeof updateItemQty === "function") {
+      // merge qty: tambah ke existing.qty
+      const newQty = Number(existing.qty || 0) + Number(payload.qty || 0);
+      updateItemQty({
+        _cid: existing._cid, // kalau context menggunakan _cid
+        id: existing.id,
+        variant: payload.variant,
+        qty: newQty,
+      });
+    } else {
+      // add new item (payload matches screenshot DB)
+      addToCart(payload);
+    }
 
     alert(
       `${product.name} (${

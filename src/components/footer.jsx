@@ -1,12 +1,70 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import "../css/style.css"; // pastikan path ini benar
+import { getDatabase, ref as dbRef, onValue } from "firebase/database";
 
 export default function Footer() {
   const address =
     "Universitas Klabat, Airmadidi Atas, Kec. Airmadidi, Manado, Sulawesi Utara 95371";
-  const phone = "+62 812 3456 7890";
-  const phoneSanitized = phone.replace(/[^+\d]/g, ""); // untuk tel:
-  const email = "dsaveesticker@gmail.com";
+
+  // contact state read from /contact
+  const [contact, setContact] = useState({
+    phone: "+62 812 3456 7890",
+    email: "dsaveesticker@gmail.com",
+    instagram: "dsavee",
+    tiktok: "dsavee",
+  });
+
+  useEffect(() => {
+    let db;
+    try {
+      db = getDatabase();
+    } catch (err) {
+      console.warn("Firebase not initialized (footer):", err);
+      return;
+    }
+    const cRef = dbRef(db, "contact");
+    const unsub = onValue(
+      cRef,
+      (snap) => {
+        const v = snap.val();
+        if (!v) return;
+        setContact((prev) => ({
+          phone: typeof v.phone === "string" ? v.phone : prev.phone,
+          email: typeof v.email === "string" ? v.email : prev.email,
+          instagram:
+            typeof v.instagram === "string" ? v.instagram : prev.instagram,
+          tiktok: typeof v.tiktok === "string" ? v.tiktok : prev.tiktok,
+        }));
+      },
+      (err) => {
+        console.error("contact onValue err (footer):", err);
+      }
+    );
+    return () => {
+      try {
+        if (typeof unsub === "function") unsub();
+      } catch {}
+    };
+  }, []);
+
+  const phone = contact.phone || "+62 812 3456 7890";
+  const phoneSanitized = String(phone).replace(/[^+\d]/g, ""); // tel:
+  const email = contact.email || "dsaveesticker@gmail.com";
+
+  function buildInstagramUrl(inst) {
+    if (!inst) return "https://instagram.com";
+    const s = inst.trim();
+    if (s.startsWith("http")) return s;
+    const username = s.startsWith("@") ? s.slice(1) : s;
+    return `https://instagram.com/${username}`;
+  }
+  function buildTiktokUrl(tk) {
+    if (!tk) return "https://www.tiktok.com";
+    const s = tk.trim();
+    if (s.startsWith("http")) return s;
+    const username = s.startsWith("@") ? s.slice(1) : s;
+    return `https://www.tiktok.com/@${username}`;
+  }
 
   return (
     <footer className="site-footer">
@@ -66,11 +124,11 @@ export default function Footer() {
 
             <div className="d-flex align-items-center gap-3 socials">
               <a
-                href="https://www.instagram.com/dsavee"
+                href={buildInstagramUrl(contact.instagram)}
                 className="social-icon"
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="Instagram Dsavee"
+                aria-label={`Instagram ${contact.instagram}`}
               >
                 {/* Instagram SVG */}
                 <svg
@@ -105,11 +163,11 @@ export default function Footer() {
               </a>
 
               <a
-                href="https://www.tiktok.com/@dsavee"
+                href={buildTiktokUrl(contact.tiktok)}
                 className="social-icon"
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="TikTok Dsavee"
+                aria-label={`TikTok ${contact.tiktok}`}
               >
                 {/* TikTok SVG */}
                 <svg

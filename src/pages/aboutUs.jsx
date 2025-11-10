@@ -1,16 +1,23 @@
-// src/pages/aboutUs.jsx
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { getDatabase, ref as dbRef, onValue } from "firebase/database";
 
 export default function AboutUs() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // contact state populated from Realtime DB /contact
+  const [contact, setContact] = useState({
+    email: "dsaveesticker@gmail.com",
+    phone: "+62 812 3456 7890",
+    instagram: "dsavee",
+    tiktok: "dsavee",
+  });
+
   useEffect(() => {
     document.title = "About Us — Dsavee";
 
     if (location.hash) {
-      // scroll ke element sesuai hash
       const element = document.querySelector(location.hash);
       if (element) {
         setTimeout(() => {
@@ -21,6 +28,62 @@ export default function AboutUs() {
       window.scrollTo(0, 0);
     }
   }, [location]);
+
+  // subscribe to /contact in Realtime Database
+  useEffect(() => {
+    let db;
+    try {
+      db = getDatabase();
+    } catch (err) {
+      // Firebase not initialized -> keep defaults
+      console.warn("Firebase not initialized (aboutUs):", err);
+      return;
+    }
+    const cRef = dbRef(db, "contact");
+    const unsub = onValue(
+      cRef,
+      (snap) => {
+        const v = snap.val();
+        if (!v) return;
+        setContact((prev) => ({
+          email: typeof v.email === "string" ? v.email : prev.email,
+          phone: typeof v.phone === "string" ? v.phone : prev.phone,
+          instagram:
+            typeof v.instagram === "string" ? v.instagram : prev.instagram,
+          tiktok: typeof v.tiktok === "string" ? v.tiktok : prev.tiktok,
+        }));
+      },
+      (err) => {
+        console.error("contact onValue error (aboutUs):", err);
+      }
+    );
+    return () => {
+      try {
+        if (typeof unsub === "function") unsub();
+      } catch {}
+    };
+  }, []);
+
+  // helpers to build social URLs safely
+  function buildInstagramUrl(inst) {
+    if (!inst) return "";
+    const s = inst.trim();
+    if (s.startsWith("http")) return s;
+    const username = s.startsWith("@") ? s.slice(1) : s;
+    return `https://instagram.com/${username}`;
+  }
+  function buildTiktokUrl(tk) {
+    if (!tk) return "";
+    const s = tk.trim();
+    if (s.startsWith("http")) return s;
+    const username = s.startsWith("@") ? s.slice(1) : s;
+    return `https://www.tiktok.com/@${username}`;
+  }
+  // sanitize telephone for tel:
+  function telHref(phone) {
+    if (!phone) return "";
+    return `tel:${String(phone).replace(/[^+\d]/g, "")}`;
+  }
 
   return (
     <main className="container my-5">
@@ -200,9 +263,7 @@ export default function AboutUs() {
             <div className="card border-0 shadow-sm p-3">
               <h6>Email</h6>
               <p className="mb-0">
-                <a href="mailto:dsaveesticker@gmail.com">
-                  dsaveesticker@gmail.com
-                </a>
+                <a href={`mailto:${contact.email}`}>{contact.email}</a>
               </p>
             </div>
           </div>
@@ -211,7 +272,7 @@ export default function AboutUs() {
             <div className="card border-0 shadow-sm p-3">
               <h6>Telepon</h6>
               <p className="mb-0">
-                <a href="tel:+6281234567890">+62 812-3456-7890</a>
+                <a href={telHref(contact.phone)}>{contact.phone}</a>
               </p>
             </div>
           </div>
@@ -220,25 +281,33 @@ export default function AboutUs() {
             <div className="card border-0 shadow-sm p-3">
               <h6>Media Sosial</h6>
               <p className="mb-0">
-                <a
-                  href="https://instagram.com/dsavee"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Instagram @dsavee"
-                  className="me-3"
-                >
-                  @dsavee
-                </a>
+                {contact.instagram ? (
+                  <a
+                    href={buildInstagramUrl(contact.instagram)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Instagram ${contact.instagram}`}
+                    className="me-3"
+                  >
+                    {contact.instagram.startsWith("@")
+                      ? contact.instagram
+                      : `@${contact.instagram}`}
+                  </a>
+                ) : null}
 
-                <a
-                  href="https://www.tiktok.com/@dsavee"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="TikTok @dsavee"
-                  className="ms-2"
-                >
-                  @dsavee
-                </a>
+                {contact.tiktok ? (
+                  <a
+                    href={buildTiktokUrl(contact.tiktok)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`TikTok ${contact.tiktok}`}
+                    className="ms-2"
+                  >
+                    {contact.tiktok.startsWith("@")
+                      ? contact.tiktok
+                      : `@${contact.tiktok}`}
+                  </a>
+                ) : null}
               </p>
             </div>
           </div>
